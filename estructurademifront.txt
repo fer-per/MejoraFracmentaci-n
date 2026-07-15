@@ -1,0 +1,241 @@
+Esta es la especificación técnica y de diseño completa para recrear la aplicación Escritorio del Archivista - Fragmentador de PDFs Históricos. Está redactada con el máximo nivel de detalle para que cualquier inteligencia artificial pueda replicar esta interfaz, su lógica y su sistema de diseño en cualquier lenguaje o framework (Python).
+📖 Manual de Especificaciones Técnicas y de Diseño
+Proyecto: "Escritorio del Archivista" 
+Este sistema está diseñado para que archivistas e historiadores carguen inventarios en formato de hoja de cálculo (Excel/CSV) y documentos PDF maestros digitales de gran volumen (libros antiguos escaneados), con el fin de fragmentar el PDF en archivos individuales por cada registro histórico. Su valor principal reside en la validación en tiempo real de la consistencia física de la foliación correlativa (detectar folios perdidos, saltos, hojas en blanco o errores de transcripción antes de procesar).
+I. Sistema de Diseño: 
+Para evocar una atmósfera de precisión académica y archivística fusionada con la automatización de alta tecnología, se ha diseñado una paleta de colores denominada "Library Slate & Parchment":
+1. Paleta de Colores (Hexadecimales)
+Colores de Marca (Primarios y de Énfasis):
+primary (Burdeos / Burgundy): #570013 (Acciones principales, estados activos y llamados a la acción).
+primary-container (Púrpura Profundo): #800020 (Fondos de botones e indicadores de estatus).
+on-primary-container (Rosa Coral): #ff828a (Contraste de texto o bordes sobre fondos oscuros).
+Colores Secundarios:
+secondary (Rosa Ceniza / Greyish Rose): #7c535d (Estatus secundarios y etiquetas informativas).
+secondary-container (Rosa Pastel): #ffc9d5 (Fondos de pestañas activas y destacados).
+on-secondary-container (Marrón Rojizo): #7b525c (Texto de botones secundarios).
+Neutros y Fondos (Capas de papel sobre escritorio):
+background (Arena Claro / Off-white): #fcf9f8 (Fondo de pantalla principal que reduce la fatiga visual).
+surface (Blanco Puro): #ffffff (Fondos de tarjetas, modales e inputs activos).
+surface-container-low (Gris Pergamino): #f6f3f2 (Fondos de tablas e inputs inactivos).
+surface-container (Gris Cálido): #f0edec (Fondos de barras laterales y cabeceras).
+surface-container-high: #eae7e7
+surface-container-highest: #e5e2e1
+Bordes y Separadores:
+outline (Marrón Arcilla): #8c7071 (Bordes interactivos).
+outline-variant (Rosa Pálido): #e0bfbf (Separadores sutiles y bordes de tarjetas).
+Terminal / Consola de Procesos:
+tertiary (Vino Oscuro / Black Rose): #32131c (Fondo de la consola de logs).
+on-tertiary (Blanco Crema): #e5e1df (Texto de los logs de la consola).
+2. Tipografías
+Tipografía de Interfaz (Sans-serif): Manrope o Inter.
+Uso: Títulos, botones, barras de navegación y textos de interfaz.
+Estilo: Tracking ajustado (letter-spacing: -0.02em) en titulares grandes para dar un acabado editorial moderno.
+Tipografía de Datos Técnicos (Monospace): JetBrains Mono o Fira Code.
+Uso: Códigos de registro, rangos de folios (002r-003v), números de página, logs de terminal y coordenadas.
+3. Sombras, Bordes y Formas
+Borde estándar: 1px sólido en #e0bfbf (outline-variant).
+Borde de enfoque/hover: 1px o 2px sólido en #8c7071 o #570013 (Primario).
+Radio de bordes (Rounded Corners):
+General (Tarjetas, botones, modales): 8px (0.5rem).
+Componentes pequeños (Tags, checkboxes, inputs): 4px (0.25rem).
+Sombras (Elevaciones sutiles):
+Sombra de tarjeta interactiva: 0 4px 12px rgba(50, 19, 28, 0.05) (La sombra contiene un matiz cromático del Vino Oscuro para armonía).
+II. Modelos de Datos (Schemas & Types)
+Cualquier backend o motor de estado de frontend debe estructurar las entidades bajo los siguientes esquemas:
+code
+python
+// 1. Fila de Inventario extraída del Excel/CSV
+export interface InventoryRecord {
+  id: string;          // ID incremental autogenerado (#0001, #0002)
+  fila: number;        // Número de fila real de la hoja de cálculo
+  registro: string;    // Código del expediente (ej: "1892-001")
+  escribano: string;   // Nombre del notario / escribano histórico
+  protocolo: string;   // ID del protocolo físico (ej: "P-124")
+  folios: string;      // Rango de folios original (ej: "002r-003v" o "140")
+  pgPdf: string;       // Páginas correspondientes en el PDF (ej: "1-2")
+  titulo: string;      // Asunto o título del documento
+  estado: 'VALIDADO' | 'REVISAR' | 'FRAGMENTADO';
+}
+
+// 2. Regla de Exclusión (Saltos de secuencia o portadas)
+export interface ExclusionRule {
+  id: string;
+  tipo: 'SALTO' | 'IGNORAR';
+  desde: number;        // Folio desde
+  hasta: number;        // Folio hasta
+  motivo: string;       // Comentario explicativo
+  tipoContenido?: string; // Para IGNORAR: 'Hoja en Blanco' | 'Portada' | 'Separador'
+}
+
+// 3. Log de Sistema para la Consola interactiva
+export interface SystemLog {
+  timestamp: string;    // Formato HH:MM:SS
+  tipo: 'INFO' | 'WARN' | 'ERR' | 'SUCCESS';
+  mensaje: string;
+}
+
+// 4. Sugerencia de Corrección Inteligente (Discrepancia detectada)
+export interface SugerenciaCorreccion {
+  id: string;
+  registroId: string;   // ID del registro asociado
+  tipoError: string;    // "SALTO DE FOLIO" | "ERROR FORMATO"
+  descripcion: string;  // Justificación detallada del error
+  valorActual: string;  // Valor erróneo detectado
+  valorSugerido: string;// Propuesta corregida calculada por algoritmo
+  escribano: string;
+  foliosOriginal: string;
+  rangoSugerido: string;
+  paginasPdf: string;
+  paginasSugeridas: string;
+  fechaOriginal: string;
+  fechaValidada: string;
+}
+III. Arquitectura de Archivos (Estructura que debe de ser cambiada a una de Python, si es necesario adaptar)
+Para un desarrollo limpio y modular, se recomienda estructurar la aplicación en carpetas independientes para componentes reutilizables, vistas y lógica matemática:
+code
+Text
+/src
+│   ├── main.py                # Punto de entrada de la aplicación
+│   ├── App.py                 # Contenedor de Estado Global e Hilos de Eventos
+│   ├── index.py               # Estilos globales y Tailwinds
+│   └── types.py                # Interfaces de datos
+│
+├──/components                  # Componentes reutilizables
+│   ├── Header.py              # Barra superior de navegación y Vista Dual
+│   ├── Sidebar.py             # Panel de pestañas lateral colapsable
+│   └── PDFPreview.py          # Visor de documento integrado + Terminal de logs
+│
+├──/views                       # Pantallas independientes del flujo
+│   ├── WorkspaceView.py       # Carga de archivos, mapeos e inicio de procesamiento
+│   ├── ExpandedAnalyzerView.py# Vista Extendida: Tabla 12-cols y panel de corrección
+│   └── ExclusionsView.py      # Gestión de saltos de secuencia y páginas omitidas
+│
+└──/utils                       # Algoritmos de soporte (Lógica pura)
+    ├── folio_parser.py         # Intérprete y validador de secuencias de folios
+    └── mock_data.py            # Datos de pre-carga para la demostración
+
+IV. Especificación Detallada de las Pantallas e Interfaces
+El frontend completo consta de un diseño principal con Header y Sidebar fijos, y un panel de trabajo flexible que se divide de la siguiente manera:
+1. Barra Superior (Header) y Barra Lateral (Sidebar)
+Header (Cabecera):
+Contiene el título del software: "Fragmentador de PDFs Históricos".
+Muestra un indicador sutil del modo activo (ej: "MODO NORMAL" en una píldora con fondo #eae7e7 y fuente label-caps).
+Incluye un botón interactivo de Vista Dual (Material Symbols: split_screen) que permite activar o desactivar la barra del previsualizador de PDFs al instante para optimizar el espacio de pantalla.
+Muestra el avatar del usuario y un botón de configuración (settings).
+Sidebar (Menú Lateral):
+Diseño colapsable de 256px (w-64) a 80px (w-20) mediante un botón flotante con ícono de flecha (chevron_left / chevron_right).
+Botón prominente de "Nueva Fragmentación" o "Nueva Sesión" en la parte superior con ícono de suma (add), aplicando el color #570013.
+Lista de pestañas de navegación con hover reactivo:
+Archivos / Workspace (upload_file)
+Tabla de Inventario (table_chart)
+Exclusiones (rule)
+Analizadores de Calidad (analytics)
+Procesar (running_with_errors)
+Línea de separación sutil que da paso a Documentación (help) y Soporte (contact_support).
+2. Pantalla 1: Área de Trabajo del Archivista (Workspace)
+Es la zona de configuración inicial. Se implementa en un grid de layout flexible de escritorio con un split de 60% (Controles) y 40% (Visor PDF).
+Paso 1: Tarjeta "Carga de Archivos":
+Dos selectores de arrastrar y soltar (Drag and Drop):
+Inventario Excel: Permite cargar archivos .xlsx. Al subirlo, muestra un banner con el nombre del archivo, ícono de Excel y un botón de "X" para descartar.
+PDF Original: Permite cargar el documento manuscrito escaneado.
+Contenedor de Mapeo Inicial (Fila de 4 inputs numéricos):
+Inicia desde fila: Input numérico (Fila donde empiezan los datos en el Excel, por defecto 2).
+Termina en fila: Input numérico (Fila final, por defecto 500).
+Folio Inicio Protocolo: Número de folio físico inicial (por defecto 1).
+Pág. PDF Inicio: Número de página del archivo digital que corresponde al primer folio (por defecto 1).
+Paso 2: Previsualización Rápida del Inventario:
+Muestra una tabla compacta con las primeras 4 filas de la hoja de cálculo para verificar el mapeo.
+Botón superior derecho de "Vista Expandida" que redirige inmediatamente a la pantalla de Analizadores de Calidad.
+Paso 3: Botón de Fragmentación y Progreso:
+Botón gigante de "Fragmentar PDF" con ícono de tijeras (content_cut). Aplica el color #570013 con una sutil animación de escala al hacer clic.
+Barra de progreso animada: Al activarse, avanza fluidamente de 0% a 100% simulando el renderizado de PDFs en segundo plano, actualizando los textos de estatus e interactuando con la consola de logs.
+3. Pantalla 2: Vista Expandida y Analizadores de Calidad
+Pantalla para el control fino y análisis de integridad. Diseñada para ocupar el 100% del ancho de pantalla para maximizar la legibilidad de la grilla de datos de 12 columnas.
+Barra de Filtros del Analizador (Tabs horizontales redondeadas):
+Cinco botones con íconos: FOLIOS, TÓPICA, CRÓNICA, COVERAGE y REPORT. Al hacer clic, filtran la tabla y notifican en consola los resultados correspondientes del análisis heurístico.
+La Grilla de Datos de 12 Columnas (Estilo Hoja de Cálculo):
+Columnas: ID (1), Registro (2), Escribano (3), Protocolo (1), Folios (2), Estado (2) y Acciones (1).
+Filas: Filas con efecto zebra y hover de color #fcf9f8. Si una fila está seleccionada, se pinta con un fondo sutil del color primario en baja opacidad (bg-primary/5) y un borde grueso izquierdo de 4px color Burdeos (border-primary).
+Estatus: Los chips de estado utilizan fondos desaturados y legibles:
+VALIDADO: Fondo azul claro con texto azul marino.
+REVISAR / SALTO: Fondo rojo pálido con texto rojo oscuro.
+OCR PENDIENTE: Fondo amarillo pálido con texto marrón.
+Panel Lateral Derecho de Resultados:
+Contiene estadísticas resumidas: Éxitos (Verde), Alertas (Naranja), Errores (Rojo).
+Botón inferior de "Exportar Reporte (.xlsx)" para descargar la hoja corregida.
+Mapeador de Corrección Rápida: Si el usuario selecciona un registro con error, el panel muestra un botón interactivo para abrir la corrección inteligente detallada en un modal flotante.
+❖ El Modal de Corrección Inteligente (Detallada):
+Este modal se dibuja centrado con fondo desenfocado traslúcido (backdrop-blur-sm). Está diseñado en dos columnas principales (Grid de 12 cols):
+Columna Izquierda (5 columnas de ancho):
+Contexto del Error: Caja de texto con fondo gris suave que explica por qué falló la consistencia (ej: "Se detectó un salto de 4 unidades en la secuencia correlativa esperada").
+Metadatos: Tabla limpia con el ID del registro, nombre del escribano e histórico de folios.
+Columna Derecha (7 columnas de ancho):
+Comparación Detallada (Grid de 2x2):
+Valor Actual: Caja roja con el valor erróneo del Excel (ej: 140).
+Valor Sugerido: Caja verde con un campo de entrada interactivo que carga el valor estimado correcto por el algoritmo (ej: 136) para que el usuario lo edite o confirme.
+Comparativas de rango original, sugerido y fechas validadas.
+Botones de Acción: Botón de cancelar y botón grande de "Aplicar Correcciones" con ícono de check (check_circle), que actualiza el estado de la fila en caliente de REVISAR a VALIDADO.
+4. Pantalla 3: Configuración de Exclusiones
+Pantalla dedicada a la inserción manual de reglas excepcionales para evitar falsos positivos de error.
+Formulario de Exclusión:
+Dividido en dos tarjetas Notion-style independientes:
+Saltos de Página (Page Jumps): Dos inputs numéricos de "Desde Folio" y "Hasta Folio" con un botón de registrar salto (add). Sirve para indicarle al software que una página física no existe en el libro original por pérdida o daño histórico, aprobando la secuencia.
+Páginas a Ignorar: Un input de rango de texto (ej: "1, 5, 20-25") y un selector del tipo de página (Hoja en Blanco | Portada | Separador | Dañada). Al presionar agregar, añade la exclusión a la base de datos de filtrado.
+Tabla de Exclusiones Configuradas:
+Una tabla limpia que renderiza las reglas agregadas en la sesión.
+Cada regla muestra una etiqueta con su tipo (SALTO o IGNORAR), el rango de páginas o folios, el motivo y un botón de eliminación rápida con ícono de papelera (delete) que se activa en hover.
+5. El Visor Documental Integrado (PDF Preview)
+Es un panel de visualización constante y persistente a la derecha de la interfaz (en las vistas que no son a pantalla completa).
+Barra de Herramientas superior:
+Texto del PDF activo en tipografía mono.
+Selector e indicador de zoom (100%, alejar zoom_out, acercar zoom_in).
+Controles de cambio de página con flechas de navegación e indicador numérico (Página 12 / 450).
+Lienzo de Previsualización (Canvas):
+Un contenedor interactivo que simula una hoja de pergamino antiguo.
+Efecto visual: Fondo color crema (#f4ece1), textura de papel antiguo mediante gradientes radiales sutiles y bordes desgastados.
+Muestra líneas de texto cursivo manuscritas difuminadas, un sello oficial de tinta burdeos (#570013) con líneas discontinuas de verificación y un tag en la esquina inferior con el folio dinámico actual.
+Registro de Procesos (Consola de Logs integrada en la parte inferior):
+Caja negra con fondo Deep Wine (#32131c) y letras color crema.
+Muestra un indicador interactivo de actividad parpadeante (ACTIVO en verde brillante).
+Muestra marcas de tiempo en formato HH:MM:SS seguidas del estatus de la validación:
+[INFO]: Texto normal.
+[WARN]: Texto naranja con el detalle de la alerta.
+[ERR]: Texto rojo para fallos graves.
+[SUCCESS]: Texto verde brillante para procesos completados.
+V. Algoritmos Clave y Lógica del Frontend (Core Logic)
+Para asegurar que la consistencia física funcione, el frontend debe implementar la siguiente lógica de análisis correlativo:
+1. El Intérprete de Folios (Parser Heurístico)
+Un folio histórico se define generalmente por un número de folio y una cara (r = recto, v = verso). Un rango se expresa como 002r-003v.
+La otra IA debe implementar una función que convierta estos strings en números enteros planos para poder calcular secuencias matemáticas correlativas:
+code
+Python
+# Ejemplo de lógica en Python para interpretar la foliación:
+import re
+
+def parse_folios(folio_str: str):
+    folio_str = folio_str.strip().lower()
+    
+    # Expresión regular para rangos como '002r-003v'
+    rango_match = re.match(r'(\d+)([rv])?-(\d+)([rv])?', folio_str)
+    if rango_match:
+        desde_num = int(rango_match.group(1))
+        desde_cara = rango_match.group(2) if rango_match.group(2) else 'r'
+        hasta_num = int(rango_match.group(3))
+        hasta_cara = rango_match.group(4) if rango_match.group(4) else 'r'
+        return desde_num, desde_cara, hasta_num, hasta_cara
+        
+    # Expresión regular para folios únicos como '140' o '140r'
+    unico_match = re.match(r'(\d+)([rv])?', folio_str)
+    if unico_match:
+        num = int(unico_match.group(1))
+        cara = unico_match.group(2) if unico_match.group(2) else 'r'
+        return num, cara, num, cara
+        
+    return None # Error de formato
+2. Algoritmo de Detección de Saltos de Secuencia
+La aplicación debe recorrer los registros de manera secuencial y comprobar que el folio inicial del registro actual corresponde exactamente al folio final del registro anterior más la secuencia natural de páginas (recto -> verso -> siguiente página recto):
+Si el número de folio no coincide y la regla de exclusión no tiene registrado un salto aprobado para ese rango, el sistema debe cambiar automáticamente el estado del registro a REVISAR, levantar una sugerencia de corrección con el valor esperado calculado y emitir un log tipo WARN en la consola interactiva.
+VI. Recomendaciones para el Prompt de la Otra IA
+Cuando entregues este diseño a otra IA para que lo codifique en su lenguaje de elección, puedes utilizar el siguiente bloque de instrucciones de control:
+PROMPT DE ENTRADA:
+"Genera una aplicación frontend interactiva para el sistema 'Escritorio del Archivista' usando python, Sigue estrictamente la guía de marca adjunta: paleta de colores de burdeos, crema y vino (#570013, #fcf9f8, #32131c), tipografía Sans-serif para UI y Monospace para datos de folios. Implementa tres flujos de pantalla: Área de Trabajo con carga de archivos y barra de progreso, Vista de Analizadores Expandida con una grilla de datos detallada de 12 columnas y panel de corrección interactivo, y el panel de Configuración de Exclusiones de saltos de secuencia. Asegura que el visor de PDF lateral simule un pergamino antiguo con sellos y que la consola de logs inferior responda en tiempo real a las acciones de la tabla."
