@@ -55,6 +55,12 @@ def load_session(app_state, path: str = None) -> bool:
         return False
 
     app_state.excel_path = data.get("excel_path")
+
+    # Si no hay Excel, limpiar datos derivados (no mostrar registros huérfanos)
+    if not app_state.excel_path or not os.path.exists(app_state.excel_path):
+        data["records"] = []
+        data["exclusions"] = []
+        data["suggestions"] = []
     app_state.pdf_path = data.get("pdf_path")
     app_state.fila_inicio = data.get("fila_inicio", 2)
     app_state.fila_fin = data.get("fila_fin", 500)

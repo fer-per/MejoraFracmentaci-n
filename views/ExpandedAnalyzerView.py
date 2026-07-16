@@ -42,7 +42,10 @@ class ExpandedAnalyzerView(tk.Frame):
         self._active_tab = tk.StringVar(value="folios")
         self._showing_errors_only = False
         self._last_analysis_key = None
-        self._error_record_ids = set()
+        self._per_tab_error_ids = {}
+        self._per_tab_showing_errors = {}
+        self._per_tab_analysis_done = {}
+        self._per_tab_results = {}
         self.configure(bg=C["background"])
         self._build()
         self.bind("<Map>", lambda e: self.refresh())
@@ -50,6 +53,8 @@ class ExpandedAnalyzerView(tk.Frame):
     def refresh(self):
         self._populate_table()
         self._update_stats_ui()
+        if hasattr(self, "_coverage_canvas") and self._coverage_canvas:
+            self._coverage_canvas.configure(scrollregion=self._coverage_canvas.bbox("all"))
 
     # ── Construcción ────────────────────────────────────────────────────────────
     def _build(self):
@@ -177,7 +182,47 @@ class ExpandedAnalyzerView(tk.Frame):
 
         self._activate_tab("folios")
 
+    def _update_toggle_button_state(self, key=None):
+        if key is None:
+            key = self._active_tab.get()
+        analysis_done = self._per_tab_analysis_done.get(key, False)
+        error_ids = self._per_tab_error_ids.get(key, set())
+        showing_errors = self._per_tab_showing_errors.get(key, False)
+
+        if not analysis_done:
+            self._toggle_errors_btn.configure(
+                state="disabled",
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+                activebackground=C["secondary_container"],
+            )
+        elif len(error_ids) == 0:
+            self._toggle_errors_btn.configure(
+                state="disabled",
+                text="  ✅ Analizador correcto  ",
+                bg="#1a5c2e", fg="#ffffff",
+                activebackground="#14532d",
+            )
+        elif showing_errors:
+            self._toggle_errors_btn.configure(
+                state="normal",
+                text="  ↩ Regresar a toda la lista  ",
+                bg="#d44040", fg="#ffffff",
+                activebackground="#b33030",
+            )
+        else:
+            self._toggle_errors_btn.configure(
+                state="normal",
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+                activebackground=C["secondary_container"],
+            )
+
     def _activate_tab(self, key: str):
+        # Guardar estado del tab actual
+        current = self._active_tab.get()
+        self._per_tab_showing_errors[current] = self._showing_errors_only
+
         for k, btn in self._tab_btns.items():
             if k == key:
                 btn.configure(
@@ -192,42 +237,42 @@ class ExpandedAnalyzerView(tk.Frame):
                     relief="flat",
                 )
         self._active_tab.set(key)
+        # Restaurar estado del tab destino
+        self._showing_errors_only = self._per_tab_showing_errors.get(key, False)
+        self._update_toggle_button_state(key)
         # Reconstruir la tabla solo si ya fue creada y no es None
         if getattr(self, "_table_frame", None) is not None:
             self._build_table()
 
     def _add_hover_effect(self, widget, hover_color, normal_color):
+        def _get_leave_bg():
+            txt = widget.cget("text")
+            if "✅ Analizador correcto" in txt:
+                return "#1a5c2e"
+            if "Regresar" in txt:
+                return "#d44040"
+            key = self._active_tab.get()
+            if self._per_tab_showing_errors.get(key, False):
+                return "#d44040"
+            return normal_color
         def on_enter(e):
             if str(widget["state"]) != "disabled":
+                txt = widget.cget("text")
+                if "✅ Analizador correcto" in txt or "Regresar" in txt:
+                    return
                 widget.configure(bg=hover_color)
         def on_leave(e):
             if str(widget["state"]) != "disabled":
-                if self._showing_errors_only:
-                    widget.configure(bg="#d44040")
-                else:
-                    widget.configure(bg=normal_color)
+                widget.configure(bg=_get_leave_bg())
         widget.bind("<Enter>", on_enter)
         widget.bind("<Leave>", on_leave)
 
     def _toggle_error_filter(self):
         """Alterna entre mostrar solo errores y toda la lista."""
         self._showing_errors_only = not self._showing_errors_only
-        if self._showing_errors_only:
-            self._toggle_errors_btn.configure(
-                text="  ↩ Regresar a toda la lista  ",
-                bg="#d44040",
-                fg="#ffffff",
-                activebackground="#b33030",
-                activeforeground="#ffffff",
-            )
-        else:
-            self._toggle_errors_btn.configure(
-                text="  ⚠ Mostrar solo errores  ",
-                bg=C["surface_low"],
-                fg=C["primary"],
-                activebackground=C["secondary_container"],
-                activeforeground=C["primary"],
-            )
+        key = self._active_tab.get()
+        self._per_tab_showing_errors[key] = self._showing_errors_only
+        self._update_toggle_button_state(key)
         self._populate_table()
 
     def _execute_analysis(self):
@@ -237,14 +282,15 @@ class ExpandedAnalyzerView(tk.Frame):
         mapper = mapper_from_state(self.app_state)
 
         # Resetear estado de errores previos de este tipo de analizador
-        self._error_record_ids = set()
+        self._per_tab_error_ids[key] = set()
+        self._per_tab_analysis_done[key] = True
         self._last_analysis_key = key
 
         if key == "folios":
             res = analizar_folios(records, exclusions)
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
             for err in res.errores:
-                self._error_record_ids.add(err.record_id)
+                self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -263,7 +309,7 @@ class ExpandedAnalyzerView(tk.Frame):
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
             # Solo marcar REVISAR los registros con errores de topica
             for err in res.errores:
-                self._error_record_ids.add(err.record_id)
+                self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -283,7 +329,7 @@ class ExpandedAnalyzerView(tk.Frame):
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
             # Solo marcar REVISAR los registros con errores de cronica
             for err in res.errores:
-                self._error_record_ids.add(err.record_id)
+                self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -300,9 +346,10 @@ class ExpandedAnalyzerView(tk.Frame):
 
         elif key == "coverage":
             res = analizar_coverage(records, self.app_state.pdf_total_pages, mapper)
+            self._per_tab_results["coverage"] = res
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
             for err in res.errores:
-                self._error_record_ids.add(err.record_id)
+                self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -316,16 +363,8 @@ class ExpandedAnalyzerView(tk.Frame):
             else:
                 self.on_add_log("SUCCESS", "Cobertura PDF OK: El PDF cubre el máximo requerido.")
 
-        # Activar el botón de filtro si hay errores
-        if self._error_record_ids:
-            self._toggle_errors_btn.configure(state="normal")
-        else:
-            self._toggle_errors_btn.configure(state="disabled")
-            self._showing_errors_only = False
-            self._toggle_errors_btn.configure(
-                text="  ⚠ Mostrar solo errores  ",
-                bg=C["surface_low"], fg=C["primary"],
-            )
+        # Actualizar estado del botón según resultado
+        self._update_toggle_button_state(key)
 
     def _populate_other_suggestions(self, errores, tipo_analisis):
         from project_types import SugerenciaCorreccion
@@ -373,6 +412,13 @@ class ExpandedAnalyzerView(tk.Frame):
         for w in self._table_frame.winfo_children():
             w.destroy()
 
+        tab = self._active_tab.get()
+
+        # Coverage usa un dashboard en lugar de tabla
+        if tab == "coverage":
+            self._build_coverage_view()
+            return
+
         # Contenedor con scroll
         container = tk.Frame(self._table_frame, bg=C["background"])
         container.pack(fill="both", expand=True)
@@ -403,13 +449,13 @@ class ExpandedAnalyzerView(tk.Frame):
         style.map("Archivista.Treeview", background=[("selected", "#f0e8ec")])
 
         # Columnas dinámicas según el tab activo
-        tab = self._active_tab.get()
+        base_cols = ("Fila", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título")
         if tab == "topica":
-            cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título", "Data Tópica", "Estado")
+            cols = base_cols + ("Data Tópica", "Estado")
         elif tab == "cronica":
-            cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título", "Data Crónica", "Estado")
+            cols = base_cols + ("Data Crónica", "Estado")
         else:
-            cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título", "Estado")
+            cols = base_cols + ("Estado",)
 
         self._tree = ttk.Treeview(
             container,
@@ -425,7 +471,7 @@ class ExpandedAnalyzerView(tk.Frame):
 
         # Anchos de columnas
         col_widths = {
-            "ID": 50, "Registro": 90, "Escribano": 140,
+            "Fila": 50, "Registro": 90, "Escribano": 140,
             "Protocolo": 70, "Folios": 90, "Pág.PDF": 70,
             "Título": 100, "Data Tópica": 100, "Data Crónica": 100, "Estado": 100,
         }
@@ -448,15 +494,151 @@ class ExpandedAnalyzerView(tk.Frame):
         for col in cols:
             self._tree.heading(col, command=lambda c=col: self._sort_treeview(c))
 
+    def _build_coverage_view(self):
+        container = tk.Frame(self._table_frame, bg=C["background"])
+        container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(container, bg=C["background"], highlightthickness=0)
+        vsb = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner = tk.Frame(canvas, bg=C["background"])
+        canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _configure_inner(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        inner.bind("<Configure>", _configure_inner)
+
+        def _configure_canvas(e):
+            canvas.itemconfig("inner_window", width=e.width)
+        canvas.bind("<Configure>", _configure_canvas)
+        canvas.itemconfig(canvas.create_window((0, 0), window=inner, anchor="nw"), tags="inner_window")
+
+        self._coverage_inner = inner
+        self._coverage_canvas = canvas
+
+        res = self._per_tab_results.get("coverage")
+        if not res:
+            self._show_coverage_placeholder(inner)
+            return
+
+        self._populate_coverage_view(inner, res)
+
+    def _show_coverage_placeholder(self, parent):
+        placeholder = tk.Frame(parent, bg=C["surface"], padx=40, pady=40,
+                               highlightbackground=C["outline_variant"], highlightthickness=1)
+        placeholder.pack(expand=True, padx=60, pady=60, fill="both")
+        tk.Label(placeholder, text="📊 Cobertura del PDF",
+                 font=("Segoe UI", 16, "bold"), fg=C["primary"], bg=C["surface"]).pack(pady=(0, 8))
+        tk.Label(placeholder, text="Presiona \"▶ Iniciar Análisis\" para evaluar\nsi el PDF cargado cubre todos los folios del inventario.",
+                 font=("Segoe UI", 10), fg=C["secondary"], bg=C["surface"], justify="center").pack()
+
+    def _populate_coverage_view(self, parent, res):
+        for w in parent.winfo_children():
+            w.destroy()
+
+        info = res.info_extra
+        pdf_total = info.get("pdf_total", 0)
+        max_req = info.get("max_requerido", 0)
+        diff = info.get("diferencia", 0)
+        estado = info.get("estado", "OK")
+        ok = estado == "OK"
+
+        # ── Card principal
+        card = tk.Frame(parent, bg=C["surface"], padx=28, pady=24,
+                        highlightbackground=C["outline_variant"], highlightthickness=1)
+        card.pack(expand=True, padx=60, pady=40, fill="both")
+
+        # Header
+        tk.Label(card, text="📊  Cobertura del PDF",
+                 font=("Segoe UI", 16, "bold"), fg=C["primary"], bg=C["surface"]).pack(anchor="w", pady=(0, 16))
+
+        # Grid de métricas
+        metrics = tk.Frame(card, bg=C["surface"])
+        metrics.pack(fill="x", pady=(0, 16))
+
+        def _metric_row(parent, label, value, value_fg):
+            row = tk.Frame(parent, bg=C["surface_low"], padx=14, pady=8)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=label, font=("Segoe UI", 9, "bold"),
+                     fg=C["secondary"], bg=C["surface_low"], width=28, anchor="w").pack(side="left")
+            tk.Label(row, text=str(value), font=("Segoe UI", 11, "bold"),
+                     fg=value_fg, bg=C["surface_low"]).pack(side="left")
+
+        _metric_row(metrics, "Total páginas del PDF",     f"{pdf_total}",  C["tertiary"])
+        _metric_row(metrics, "Máximo de páginas requerido", f"{max_req}",   C["tertiary"])
+        diff_fg = "#1a5c2e" if ok else "#b91c1c"
+        diff_sign = "+" if diff > 0 else ""
+        _metric_row(metrics, "Diferencia", f"{diff_sign}{diff}", diff_fg)
+
+        # Estado
+        estado_fg = "#1a5c2e" if ok else "#b91c1c"
+        estado_text = "✅  OK — El PDF cubre todas las páginas requeridas" if ok else "❌  INSUFICIENTE — Faltan páginas en el PDF"
+        row = tk.Frame(metrics, bg=C["surface_low"], padx=14, pady=8)
+        row.pack(fill="x", pady=3)
+        tk.Label(row, text="Estado", font=("Segoe UI", 9, "bold"),
+                 fg=C["secondary"], bg=C["surface_low"], width=28, anchor="w").pack(side="left")
+        tk.Label(row, text=estado_text, font=("Segoe UI", 11, "bold"),
+                 fg=estado_fg, bg=C["surface_low"]).pack(side="left")
+
+        # ── Barra de cobertura
+        tk.Frame(card, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+        bar_frame = tk.Frame(card, bg=C["surface"])
+        bar_frame.pack(fill="x", pady=8)
+
+        pct = int(min(max_req / max(pdf_total, 1), 1.0) * 100)
+        tk.Label(bar_frame, text=f"Cobertura: {pct}%",
+                 font=("Segoe UI", 9, "bold"), fg=C["primary"], bg=C["surface"]).pack(anchor="w", pady=(0, 4))
+
+        bar_bg = tk.Frame(bar_frame, bg=C["surface_low"], height=12,
+                          highlightbackground=C["outline_variant"], highlightthickness=1)
+        bar_bg.pack(fill="x")
+        bar_color = "#1a5c2e" if ok else "#b91c1c"
+        bar_fill = tk.Frame(bar_bg, bg=bar_color, height=12)
+        bar_fill.place(relwidth=pct / 100.0, relheight=1)
+
+        # ── Mensaje detallado
+        if not ok:
+            err = res.errores[0] if res.errores else None
+            if err:
+                tk.Frame(card, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+                msg_frame = tk.Frame(card, bg="#fef2f2", padx=14, pady=10,
+                                     highlightbackground="#fecaca", highlightthickness=1)
+                msg_frame.pack(fill="x", pady=8)
+                tk.Label(msg_frame, text="⚠️  " + err.descripcion,
+                         font=("Segoe UI", 9), fg="#b91c1c", bg="#fef2f2",
+                         wraplength=600, justify="left").pack(anchor="w")
+        elif diff > 0:
+            tk.Frame(card, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+            msg_frame = tk.Frame(card, bg="#f0fdf4", padx=14, pady=10,
+                                 highlightbackground="#bbf7d0", highlightthickness=1)
+            msg_frame.pack(fill="x", pady=8)
+            tk.Label(msg_frame, text=f"ℹ️  El PDF tiene {diff} página(s) extra después del último folio del inventario.",
+                     font=("Segoe UI", 9), fg="#166534", bg="#f0fdf4",
+                     wraplength=600, justify="left").pack(anchor="w")
+
     def _populate_table(self):
+        tab = self._active_tab.get()
+
+        if tab == "coverage":
+            if hasattr(self, "_coverage_inner") and self._coverage_inner:
+                res = self._per_tab_results.get("coverage")
+                if res:
+                    self._populate_coverage_view(self._coverage_inner, res)
+                else:
+                    self._show_coverage_placeholder(self._coverage_inner)
+            return
+
         for item in self._tree.get_children():
             self._tree.delete(item)
 
-        tab = self._active_tab.get()
+        error_ids = self._per_tab_error_ids.get(tab, set())
         visible_idx = 0
         for i, r in enumerate(self.app_state.records):
             # Filtrar: si se muestra solo errores, saltar registros sin error en el analizador actual
-            if self._showing_errors_only and r.id not in self._error_record_ids:
+            if self._showing_errors_only and r.id not in error_ids:
                 continue
 
             estado_icon = {
@@ -467,14 +649,14 @@ class ExpandedAnalyzerView(tk.Frame):
             tag = r.estado.lower() if r.estado in ("revisar", "fragmentado") else ("even" if visible_idx % 2 == 0 else "odd")
             
             # Base values
-            vals = [r.id, r.registro, r.escribano, r.protocolo, r.folios, r.pg_pdf, r.titulo]
+            f_ini = getattr(r, "fecha_inicio", "")
+            f_fin = getattr(r, "fecha_fin", "")
+            vals = [r.fila, r.registro, r.escribano, r.protocolo, r.folios, r.pg_pdf, r.titulo]
             
             # Dynamic columns
             if tab == "topica":
                 vals.append(r.titulo)
             elif tab == "cronica":
-                f_ini = getattr(r, "fecha_inicio", "")
-                f_fin = getattr(r, "fecha_fin", "")
                 cronica_str = f"{f_ini} - {f_fin}" if (f_ini or f_fin) else "S/D"
                 vals.append(cronica_str)
                 
@@ -928,8 +1110,15 @@ class ExpandedAnalyzerView(tk.Frame):
             s for s in self.app_state.suggestions if s.id != suggestion.id
         ]
 
+        # Limpiar error del per-tab correspondiente
+        tipo = suggestion.tipo_error.upper()
+        tab_key = "folios" if "FOLIO" in tipo else "topica" if tipo == "TÓPICA" else "cronica" if tipo == "CRÓNICA" else None
+        if tab_key and tab_key in self._per_tab_error_ids:
+            self._per_tab_error_ids[tab_key].discard(suggestion.registro_id)
+
         self.on_add_log("SUCCESS", f"Corrección aplicada: {suggestion.registro_id} → {corrected_val}")
         self._update_stats_ui()
+        self._update_toggle_button_state()
         self._build_table()
         modal.destroy()
         messagebox.showinfo(
@@ -1345,6 +1534,7 @@ class ExpandedAnalyzerView(tk.Frame):
         # Re-ejecutar análisis de folios
         from utils.analyzers import analizar_folios
         res = analizar_folios(self.app_state.records, self.app_state.exclusions)
+        self._per_tab_analysis_done["folios"] = True
 
         # Limpiar sugerencias de tipo SALTO y re-resetar estados REVISAR
         self.app_state.suggestions = [
@@ -1355,9 +1545,9 @@ class ExpandedAnalyzerView(tk.Frame):
                 rec.estado = ""
 
         # Marcar registros con errores
-        self._error_record_ids = set()
+        self._per_tab_error_ids["folios"] = set()
         for err in res.errores:
-            self._error_record_ids.add(err.record_id)
+            self._per_tab_error_ids["folios"].add(err.record_id)
             for rec in self.app_state.records:
                 if rec.id == err.record_id:
                     rec.estado = "REVISAR"
@@ -1411,12 +1601,9 @@ class ExpandedAnalyzerView(tk.Frame):
         )
         if not has_salto_remaining:
             self._jump_btn.configure(state="disabled", bg=C["secondary"])
-            self._showing_errors_only = False
-            self._toggle_errors_btn.configure(
-                state="disabled",
-                text="  ⚠ Mostrar solo errores  ",
-                bg=C["surface_low"], fg=C["primary"],
-            )
+        self._per_tab_showing_errors["folios"] = False
+        self._showing_errors_only = False
+        self._update_toggle_button_state("folios")
 
         self.on_add_log("SUCCESS", f"Análisis re-ejecutado tras registrar salto.")
 

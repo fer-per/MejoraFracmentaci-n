@@ -450,6 +450,16 @@ class WorkspaceView(tk.Frame):
         # Filtrar columnas Unnamed de pandas
         cols = [c for c in df.columns if not str(c).startswith("Unnamed:")]
 
+        # Auto-detectar última fila con datos reales
+        if not df.empty:
+            last_data_idx = df.last_valid_index()
+            if last_data_idx is not None:
+                fila_fin_auto = last_data_idx + 9  # +7 skiprows +2 (header shift)
+                self.app_state.fila_fin = fila_fin_auto
+                if hasattr(self, "_fila_fin_var") and self._fila_fin_var:
+                    self._fila_fin_var.set(str(fila_fin_auto))
+                self.on_add_log("INFO", f"Filas detectadas: {self.app_state.fila_inicio} a {fila_fin_auto}")
+
         # Mapeo de columnas según consideraciones_excel.md
         col_map = {
             "registro": None, "escribano": None, "protocolo": None,

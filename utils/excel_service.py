@@ -64,6 +64,12 @@ def process_excel_file(path: str, app_state) -> ExcelLoadResult:
     df.columns = [str(c).strip() for c in df.columns]
     cols = [c for c in df.columns if not str(c).startswith("Unnamed:")]
 
+    # Auto-detectar última fila con datos
+    if not df.empty:
+        last_data_idx = df.last_valid_index()
+        if last_data_idx is not None:
+            app_state.fila_fin = last_data_idx + 9
+
     # 3. Mapeo de columnas
     col_map = {
         "registro": None, "escribano": None, "protocolo": None,
