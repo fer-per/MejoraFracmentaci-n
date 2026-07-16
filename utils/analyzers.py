@@ -12,10 +12,6 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from utils.folio_parser import parse_folios, folio_to_int
 
 

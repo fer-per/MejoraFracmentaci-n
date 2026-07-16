@@ -7,27 +7,11 @@ from tkinter import ttk, messagebox
 import threading
 import time
 
+import os
 from utils.analyzers import analizar_folios, analizar_topica, analizar_cronica, analizar_coverage
 from utils.folio_engine import mapper_from_state
-
-
-
-C = {
-    "primary":           "#570013",
-    "primary_container": "#800020",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "surface_highest":   "#e5e2e1",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "secondary":         "#7c535d",
-    "secondary_container": "#ffc9d5",
-}
+from utils.folio_parser import parse_folios
+from utils.theme import C, FONT
 
 ESTADO_CONFIG = {
     "VALIDADO":   {"bg": "#dbeafe", "fg": "#1e3a5f"},
@@ -56,6 +40,9 @@ class ExpandedAnalyzerView(tk.Frame):
         self.on_add_log = on_add_log
         self._selected_record = None
         self._active_tab = tk.StringVar(value="folios")
+        self._showing_errors_only = False
+        self._last_analysis_key = None
+        self._error_record_ids = set()
         self.configure(bg=C["background"])
         self._build()
         self.bind("<Map>", lambda e: self.refresh())
@@ -103,7 +90,7 @@ class ExpandedAnalyzerView(tk.Frame):
             self._stats_panel,
             minsize=90,
             height=120,
-            stretch="never",
+            stretch="always",
         )
 
         self._build_table()
@@ -170,6 +157,24 @@ class ExpandedAnalyzerView(tk.Frame):
         )
         self._run_analysis_btn.pack(side="right", padx=10)
 
+        # Botón toggle: mostrar solo errores / regresar a toda la lista
+        self._toggle_errors_btn = tk.Button(
+            tabs_frame,
+            text="  ⚠ Mostrar solo errores  ",
+            font=("Segoe UI", 8, "bold"),
+            fg=C["primary"],
+            bg=C["surface_low"],
+            activebackground=C["secondary_container"],
+            activeforeground=C["primary"],
+            relief="flat", bd=0,
+            cursor="hand2",
+            padx=10, pady=5,
+            command=self._toggle_error_filter,
+            state="disabled",
+        )
+        self._toggle_errors_btn.pack(side="right", padx=(0, 4))
+        self._add_hover_effect(self._toggle_errors_btn, C["secondary_container"], C["surface_low"])
+
         self._activate_tab("folios")
 
     def _activate_tab(self, key: str):
@@ -191,17 +196,55 @@ class ExpandedAnalyzerView(tk.Frame):
         if getattr(self, "_table_frame", None) is not None:
             self._build_table()
 
+    def _add_hover_effect(self, widget, hover_color, normal_color):
+        def on_enter(e):
+            if str(widget["state"]) != "disabled":
+                widget.configure(bg=hover_color)
+        def on_leave(e):
+            if str(widget["state"]) != "disabled":
+                if self._showing_errors_only:
+                    widget.configure(bg="#d44040")
+                else:
+                    widget.configure(bg=normal_color)
+        widget.bind("<Enter>", on_enter)
+        widget.bind("<Leave>", on_leave)
+
+    def _toggle_error_filter(self):
+        """Alterna entre mostrar solo errores y toda la lista."""
+        self._showing_errors_only = not self._showing_errors_only
+        if self._showing_errors_only:
+            self._toggle_errors_btn.configure(
+                text="  ↩ Regresar a toda la lista  ",
+                bg="#d44040",
+                fg="#ffffff",
+                activebackground="#b33030",
+                activeforeground="#ffffff",
+            )
+        else:
+            self._toggle_errors_btn.configure(
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"],
+                fg=C["primary"],
+                activebackground=C["secondary_container"],
+                activeforeground=C["primary"],
+            )
+        self._populate_table()
+
     def _execute_analysis(self):
         key = self._active_tab.get()
         records = self.app_state.records
         exclusions = self.app_state.exclusions
         mapper = mapper_from_state(self.app_state)
 
+        # Resetear estado de errores previos de este tipo de analizador
+        self._error_record_ids = set()
+        self._last_analysis_key = key
+
         if key == "folios":
             res = analizar_folios(records, exclusions)
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
-            # Marcar registros como REVISAR si fallaron
             for err in res.errores:
+                self._error_record_ids.add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -218,7 +261,9 @@ class ExpandedAnalyzerView(tk.Frame):
         elif key == "topica":
             res = analizar_topica(records)
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
+            # Solo marcar REVISAR los registros con errores de topica
             for err in res.errores:
+                self._error_record_ids.add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -236,7 +281,9 @@ class ExpandedAnalyzerView(tk.Frame):
         elif key == "cronica":
             res = analizar_cronica(records)
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
+            # Solo marcar REVISAR los registros con errores de cronica
             for err in res.errores:
+                self._error_record_ids.add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -249,13 +296,13 @@ class ExpandedAnalyzerView(tk.Frame):
                 for err in res.errores:
                     self.on_add_log("WARN", f"[{err.record_id}] Fila {err.fila}: {err.descripcion}")
             else:
-                self.on_add_log("SUCCESS", f"Data Crónica validada: progresión temporal consistente.")
+                self.on_add_log("SUCCESS", "Data Crónica validada: progresión temporal consistente.")
 
         elif key == "coverage":
             res = analizar_coverage(records, self.app_state.pdf_total_pages, mapper)
             self.on_add_log("INFO", f"Corriendo: {res.resumen}")
-            # Marcar registros como REVISAR si fallaron
             for err in res.errores:
+                self._error_record_ids.add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
                         rec.estado = "REVISAR"
@@ -267,7 +314,18 @@ class ExpandedAnalyzerView(tk.Frame):
                 for err in res.errores:
                     self.on_add_log("WARN", f"Cobertura PDF insuficiente: {err.descripcion}")
             else:
-                self.on_add_log("SUCCESS", f"Cobertura PDF OK: El PDF cubre el máximo requerido.")
+                self.on_add_log("SUCCESS", "Cobertura PDF OK: El PDF cubre el máximo requerido.")
+
+        # Activar el botón de filtro si hay errores
+        if self._error_record_ids:
+            self._toggle_errors_btn.configure(state="normal")
+        else:
+            self._toggle_errors_btn.configure(state="disabled")
+            self._showing_errors_only = False
+            self._toggle_errors_btn.configure(
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+            )
 
     def _populate_other_suggestions(self, errores, tipo_analisis):
         from project_types import SugerenciaCorreccion
@@ -384,19 +442,29 @@ class ExpandedAnalyzerView(tk.Frame):
         self._populate_table()
         self._tree.pack(fill="both", expand=True)
         self._tree.bind("<<TreeviewSelect>>", self._on_row_select)
+        self._tree.bind("<MouseWheel>", lambda e: self._tree.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+
+        # Make columns sortable
+        for col in cols:
+            self._tree.heading(col, command=lambda c=col: self._sort_treeview(c))
 
     def _populate_table(self):
         for item in self._tree.get_children():
             self._tree.delete(item)
 
         tab = self._active_tab.get()
+        visible_idx = 0
         for i, r in enumerate(self.app_state.records):
+            # Filtrar: si se muestra solo errores, saltar registros sin error en el analizador actual
+            if self._showing_errors_only and r.id not in self._error_record_ids:
+                continue
+
             estado_icon = {
                 "": "",
                 "REVISAR": "⚠️",
                 "FRAGMENTADO": "📎"
             }.get(r.estado, "")
-            tag = r.estado.lower() if r.estado in ("revisar", "fragmentado") else ("even" if i % 2 == 0 else "odd")
+            tag = r.estado.lower() if r.estado in ("revisar", "fragmentado") else ("even" if visible_idx % 2 == 0 else "odd")
             
             # Base values
             vals = [r.id, r.registro, r.escribano, r.protocolo, r.folios, r.pg_pdf, r.titulo]
@@ -414,6 +482,20 @@ class ExpandedAnalyzerView(tk.Frame):
             vals.append(disp_estado)
             
             self._tree.insert("", "end", iid=r.id, values=tuple(vals), tags=(tag,))
+            visible_idx += 1
+
+    def _sort_treeview(self, col):
+        """Sort treeview column on header click."""
+        data = [(self._tree.set(child, col), child) for child in self._tree.get_children("")]
+        try:
+            data.sort(key=lambda t: int(t[0].replace('#', '').replace('%', '')), reverse=getattr(self, f'_sort_reverse_{col}', False))
+        except (ValueError, TypeError):
+            data.sort(key=lambda t: t[0], reverse=getattr(self, f'_sort_reverse_{col}', False))
+        
+        for index, (val, child) in enumerate(data):
+            self._tree.move(child, "", index)
+        
+        setattr(self, f'_sort_reverse_{col}', not getattr(self, f'_sort_reverse_{col}', False))
 
     # ── Panel lateral de estadísticas ────────────────────────────────────────────
     def _build_stats_panel(self, parent) -> tk.Frame:
@@ -430,6 +512,7 @@ class ExpandedAnalyzerView(tk.Frame):
         panel.columnconfigure(0, weight=3) # Chips
         panel.columnconfigure(1, weight=3) # Integrity bar
         panel.columnconfigure(2, weight=2) # Buttons/Actions
+        panel.rowconfigure(0, weight=1)
 
         # ── BLOQUE 1 (Izquierda): Chips de estadísticas ──
         left_block = tk.Frame(panel, bg=C["surface"])
@@ -503,6 +586,22 @@ class ExpandedAnalyzerView(tk.Frame):
             command=self._open_correction_modal,
         )
         self._correction_btn.pack(side="left", padx=4)
+
+        self._jump_btn = tk.Button(
+            right_block,
+            text="⬆ Registrar Salto",
+            font=("Segoe UI", 8, "bold"),
+            fg="#ffffff",
+            bg="#b45309",
+            activebackground="#92400e",
+            activeforeground="#ffffff",
+            relief="flat", bd=0,
+            cursor="hand2",
+            padx=10, pady=4,
+            state="disabled",
+            command=self._open_jump_modal,
+        )
+        self._jump_btn.pack(side="left", padx=4)
 
         tk.Button(
             right_block,
@@ -605,6 +704,17 @@ class ExpandedAnalyzerView(tk.Frame):
                 )
                 self._correction_btn.configure(state="disabled", bg=C["secondary"])
 
+            # Mostrar botón de salto solo si hay error de tipo SALTO
+            has_salto = any(
+                s.registro_id == record_id
+                for s in self.app_state.suggestions
+                if "SALTO" in s.tipo_error.upper()
+            )
+            if has_salto:
+                self._jump_btn.configure(state="normal", bg="#b45309")
+            else:
+                self._jump_btn.configure(state="disabled", bg=C["secondary"])
+
     # ── Modal de corrección inteligente ─────────────────────────────────────────
     def _open_correction_modal(self):
         if not self._selected_record:
@@ -620,7 +730,8 @@ class ExpandedAnalyzerView(tk.Frame):
         modal.title("Corrección Inteligente")
         modal.configure(bg=C["surface"])
         modal.geometry("780x520")
-        modal.resizable(False, False)
+        modal.minsize(600, 400)
+        modal.resizable(True, True)
         modal.grab_set()
 
         # Centrar
@@ -827,16 +938,527 @@ class ExpandedAnalyzerView(tk.Frame):
             f"Valor corregido: {corrected_val}"
         )
 
+    # ── Modal de salto con vista previa PDF ──────────────────────────────────────
+    def _open_jump_modal(self):
+        if not self._selected_record:
+            return
+
+        rec = self._selected_record
+        records = self.app_state.records
+        idx = next((i for i, r in enumerate(records) if r.id == rec.id), None)
+        if idx is None:
+            return
+
+        # Calcular contexto: 2 registros arriba y 2 abajo
+        ctx_start = max(0, idx - 2)
+        ctx_end = min(len(records) - 1, idx + 2)
+        context_records = records[ctx_start:ctx_end + 1]
+
+        # Rango de folios del contexto completo
+        mapper = mapper_from_state(self.app_state)
+        all_pages = []
+        for cr in context_records:
+            pages = mapper.folio_str_to_pdf_pages(cr.folios)
+            if pages:
+                all_pages.extend(pages)
+
+        if not all_pages:
+            messagebox.showinfo(
+                "Vista Previa",
+                "No se pudieron mapear las páginas PDF para los folios de este registro."
+            )
+            return
+
+        pdf_min_page = min(all_pages)
+        pdf_max_page = max(all_pages)
+
+        # Detectar salto: buscar el error SALTO asociado a este registro
+        salto_suggestion = next(
+            (s for s in self.app_state.suggestions
+             if s.registro_id == rec.id and "SALTO" in s.tipo_error.upper()),
+            None,
+        )
+
+        # Valores auto-calculados para el salto
+        # El salto cubre desde el folio esperado (valor_esperado) hasta el inicio del registro actual
+        desde_folio = salto_suggestion.valor_esperado if salto_suggestion else ""
+        hasta_folio = ""
+        parsed = parse_folios(rec.folios)
+        if parsed:
+            hasta_num, hasta_cara = parsed[0], parsed[1]
+            hasta_folio = f"{hasta_num:03d}{hasta_cara}"
+
+        # ── Crear modal ──────────────────────────────────────────────────────────
+        modal = tk.Toplevel(self)
+        modal.title("Registrar Salto — Vista Previa")
+        modal.configure(bg=C["surface"])
+        modal.geometry("960x620")
+        modal.resizable(True, True)
+        modal.minsize(760, 480)
+        modal.grab_set()
+
+        modal.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - 960) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - 620) // 2
+        modal.geometry(f"+{max(0,x)}+{max(0,y)}")
+
+        # ── Header ───────────────────────────────────────────────────────────────
+        header = tk.Frame(modal, bg="#92400e", pady=10, padx=16)
+        header.pack(fill="x")
+
+        tk.Label(
+            header,
+            text=f"⬆  Registrar Salto  —  Registro {rec.id}",
+            font=("Segoe UI", 11, "bold"),
+            fg="#ffffff", bg="#92400e",
+        ).pack(side="left")
+
+        tk.Label(
+            header,
+            text=f"Folios: {rec.folios}  |  Pág PDF: {pdf_min_page}–{pdf_max_page}",
+            font=("Courier New", 9),
+            fg="#fef3c7", bg="#92400e",
+        ).pack(side="right")
+
+        # ── Cuerpo: PanedWindow horizontal (PDF preview | formulario) ────────────
+        body = tk.PanedWindow(
+            modal, orient="horizontal",
+            sashwidth=4, sashrelief="flat",
+            bg=C["outline_variant"], opaqueresize=True,
+        )
+        body.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # ── Panel izquierdo: mini vista previa PDF ────────────────────────────────
+        pdf_frame = tk.Frame(body, bg=C["surface_low"])
+        body.add(pdf_frame, minsize=280, stretch="always")
+
+        pdf_header = tk.Frame(pdf_frame, bg=C["surface_container"], pady=4, padx=8)
+        pdf_header.pack(fill="x")
+        tk.Label(
+            pdf_header,
+            text=f"Vista Previa PDF  (pág. {pdf_min_page}–{pdf_max_page})",
+            font=("Segoe UI", 9, "bold"),
+            fg=C["primary"], bg=C["surface_container"],
+        ).pack(side="left")
+        tk.Label(
+            pdf_header,
+            text=f"{len(context_records)} registros de contexto",
+            font=("Segoe UI", 8),
+            fg=C["secondary"], bg=C["surface_container"],
+        ).pack(side="right")
+
+        pdf_canvas = tk.Canvas(
+            pdf_frame, bg=C["surface_low"],
+            highlightthickness=0,
+        )
+        pdf_vsb = tk.Scrollbar(pdf_frame, orient="vertical", command=pdf_canvas.yview)
+        pdf_canvas.configure(yscrollcommand=pdf_vsb.set)
+        pdf_vsb.pack(side="right", fill="y")
+        pdf_canvas.pack(fill="both", expand=True)
+
+        pdf_inner = tk.Frame(pdf_canvas, bg=C["surface_low"])
+        pdf_canvas_window = pdf_canvas.create_window((0, 0), window=pdf_inner, anchor="nw")
+
+        def _on_pdf_inner_configure(e):
+            pdf_canvas.configure(scrollregion=bbox)
+        pdf_inner.bind("<Configure>", lambda e: pdf_canvas.configure(
+            scrollregion=pdf_canvas.bbox("all")))
+
+        def _on_pdf_canvas_configure(e):
+            pdf_canvas.itemconfig(pdf_canvas_window, width=e.width)
+        pdf_canvas.bind("<Configure>", _on_pdf_canvas_configure)
+
+        # Renderizar páginas del contexto
+        self._render_modal_pdf_pages(pdf_inner, pdf_canvas, all_pages, context_records, idx - ctx_start)
+
+        # Mousewheel para el canvas del PDF
+        def _on_pdf_mousewheel(event):
+            pdf_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        pdf_canvas.bind("<MouseWheel>", _on_pdf_mousewheel)
+        pdf_inner.bind("<MouseWheel>", _on_pdf_mousewheel)
+
+        # ── Panel derecho: formulario de salto ────────────────────────────────────
+        form_frame = tk.Frame(body, bg=C["surface"], padx=16, pady=12)
+        body.add(form_frame, minsize=260, stretch="never")
+
+        tk.Label(
+            form_frame,
+            text="Datos del Salto",
+            font=("Segoe UI", 10, "bold"),
+            fg=C["primary"], bg=C["surface"],
+        ).pack(anchor="w", pady=(0, 10))
+
+        # Info del registro seleccionado
+        info_card = tk.Frame(
+            form_frame, bg=C["surface_low"],
+            highlightbackground=C["outline_variant"], highlightthickness=1,
+            padx=10, pady=8,
+        )
+        info_card.pack(fill="x", pady=(0, 12))
+
+        for lbl, val in [
+            ("Registro:", rec.id),
+            ("Escribano:", rec.escribano),
+            ("Folios:", rec.folios),
+            ("Pág PDF:", rec.pg_pdf),
+        ]:
+            row = tk.Frame(info_card, bg=C["surface_low"])
+            row.pack(fill="x", pady=1)
+            tk.Label(row, text=lbl, font=("Segoe UI", 8),
+                     fg=C["secondary"], bg=C["surface_low"], width=12, anchor="w").pack(side="left")
+            tk.Label(row, text=val, font=("Courier New", 8, "bold"),
+                     fg=C["tertiary"], bg=C["surface_low"]).pack(side="left")
+
+        tk.Frame(form_frame, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+
+        # Campos del salto
+        tk.Label(
+            form_frame,
+            text="Rango de folios a excluir del salto:",
+            font=("Segoe UI", 8, "bold"),
+            fg=C["primary"], bg=C["surface"],
+        ).pack(anchor="w", pady=(0, 6))
+
+        desde_frame = tk.Frame(form_frame, bg=C["surface"])
+        desde_frame.pack(fill="x", pady=3)
+        tk.Label(desde_frame, text="Desde Folio:", font=("Segoe UI", 8),
+                 fg=C["secondary"], bg=C["surface"], width=14, anchor="w").pack(side="left")
+        jump_desde_var = tk.StringVar(value=str(desde_folio))
+        tk.Entry(desde_frame, textvariable=jump_desde_var,
+                 font=("Courier New", 10, "bold"), width=12,
+                 fg=C["tertiary"], bg="#fef3c7",
+                 relief="solid", bd=1,
+                 highlightbackground=C["outline_variant"], highlightthickness=1,
+                 justify="center").pack(side="left", padx=4)
+
+        hasta_frame = tk.Frame(form_frame, bg=C["surface"])
+        hasta_frame.pack(fill="x", pady=3)
+        tk.Label(hasta_frame, text="Hasta Folio:", font=("Segoe UI", 8),
+                 fg=C["secondary"], bg=C["surface"], width=14, anchor="w").pack(side="left")
+        jump_hasta_var = tk.StringVar(value=str(hasta_folio))
+        tk.Entry(hasta_frame, textvariable=jump_hasta_var,
+                 font=("Courier New", 10, "bold"), width=12,
+                 fg=C["tertiary"], bg="#fef3c7",
+                 relief="solid", bd=1,
+                 highlightbackground=C["outline_variant"], highlightthickness=1,
+                 justify="center").pack(side="left", padx=4)
+
+        tk.Label(form_frame, text="Motivo (opcional):", font=("Segoe UI", 8),
+                 fg=C["secondary"], bg=C["surface"]).pack(anchor="w", pady=(8, 3))
+        jump_motivo_var = tk.StringVar(
+            value=f"Salto aprobado: folios {desde_folio}–{hasta_folio}"
+        )
+        tk.Entry(form_frame, textvariable=jump_motivo_var,
+                 font=("Segoe UI", 9), width=30,
+                 fg=C["tertiary"], bg=C["surface_low"],
+                 relief="solid", bd=1,
+                 highlightbackground=C["outline_variant"], highlightthickness=1,
+                 ).pack(fill="x", pady=3)
+
+        # Descripción del error
+        if salto_suggestion:
+            tk.Frame(form_frame, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+            tk.Label(
+                form_frame,
+                text="Error detectado:",
+                font=("Segoe UI", 8, "bold"),
+                fg="#92400e", bg=C["surface"],
+            ).pack(anchor="w", pady=(0, 4))
+            tk.Label(
+                form_frame,
+                text=salto_suggestion.descripcion,
+                font=("Segoe UI", 8),
+                fg=C["tertiary"], bg=C["surface"],
+                wraplength=220, justify="left",
+            ).pack(anchor="w")
+
+        # ── Botones de acción ─────────────────────────────────────────────────────
+        tk.Frame(form_frame, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
+
+        btn_frame = tk.Frame(form_frame, bg=C["surface"])
+        btn_frame.pack(fill="x", pady=(4, 0))
+
+        def _on_cancel():
+            modal.destroy()
+
+        def _on_apply():
+            self._apply_jump(
+                desde_var=jump_desde_var,
+                hasta_var=jump_hasta_var,
+                motivo_var=jump_motivo_var,
+                modal=modal,
+            )
+
+        tk.Button(
+            btn_frame,
+            text="Cancelar",
+            font=("Segoe UI", 9),
+            fg=C["secondary"], bg=C["surface_low"],
+            activebackground=C["secondary_container"],
+            relief="flat", bd=0, cursor="hand2",
+            padx=14, pady=8,
+            command=_on_cancel,
+        ).pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            btn_frame,
+            text="✅  Agregar Cambios",
+            font=("Segoe UI", 9, "bold"),
+            fg="#ffffff", bg="#1a5c2e",
+            activebackground="#14532d",
+            relief="flat", bd=0, cursor="hand2",
+            padx=14, pady=8,
+            command=_on_apply,
+        ).pack(side="left")
+
+    def _render_modal_pdf_pages(self, parent, canvas, pages, context_records, highlight_idx):
+        """Renderiza páginas PDF en el canvas del modal con indicadores de contexto."""
+        try:
+            import fitz
+            from PIL import Image, ImageTk
+        except ImportError:
+            tk.Label(
+                parent,
+                text="PyMuPDF no disponible.\nNo se puede renderizar la vista previa.",
+                font=("Segoe UI", 9), fg=C["secondary"], bg=C["surface_low"],
+            ).pack(pady=40)
+            return
+
+        pdf_path = self.app_state.pdf_path
+        if not pdf_path or not os.path.exists(pdf_path):
+            tk.Label(
+                parent,
+                text="No hay PDF cargado.\nCargue un PDF para ver la vista previa.",
+                font=("Segoe UI", 9), fg=C["secondary"], bg=C["surface_low"],
+            ).pack(pady=40)
+            return
+
+        try:
+            doc = fitz.open(pdf_path)
+        except Exception as e:
+            tk.Label(
+                parent,
+                text=f"Error al abrir PDF:\n{e}",
+                font=("Segoe UI", 9), fg="#7f1d1d", bg=C["surface_low"],
+            ).pack(pady=40)
+            return
+
+        render_width = 380
+        img_refs = []
+
+        for i, page_num in enumerate(pages):
+            if page_num < 1 or page_num > len(doc):
+                continue
+
+            is_highlight = (i == highlight_idx)
+
+            # Etiqueta de separación entre registros de contexto
+            if i > 0 and context_records and (i < len(context_records)):
+                sep = tk.Frame(parent, bg=C["outline_variant"], height=1)
+                sep.pack(fill="x", padx=8, pady=4)
+
+            # Label de registro
+            if i < len(context_records):
+                cr = context_records[i]
+                lbl_bg = "#fef3c7" if is_highlight else C["surface_container"]
+                lbl_fg = "#92400e" if is_highlight else C["secondary"]
+                tag_text = " << SELECCIONADO >>" if is_highlight else ""
+                rec_label = tk.Label(
+                    parent,
+                    text=f"  {cr.id} — {cr.folios}  (pág. {page_num}){tag_text}",
+                    font=("Segoe UI", 8, "bold") if is_highlight else ("Segoe UI", 8),
+                    fg=lbl_fg, bg=lbl_bg,
+                    anchor="w", padx=6, pady=3,
+                )
+                rec_label.pack(fill="x", padx=4)
+
+            # Renderizar página
+            try:
+                page = doc[page_num - 1]
+                rect = page.rect
+                zoom = render_width / rect.width
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                photo = ImageTk.PhotoImage(img)
+                img_refs.append(photo)
+
+                border_color = "#b45309" if is_highlight else C["outline_variant"]
+                border_width = 2 if is_highlight else 1
+
+                page_frame = tk.Frame(
+                    parent, bg=border_color,
+                    padx=border_width, pady=border_width,
+                )
+                page_frame.pack(padx=8, pady=4, fill="x")
+
+                lbl = tk.Label(page_frame, image=photo, bg=C["surface_low"])
+                lbl.pack()
+            except Exception:
+                tk.Label(
+                    parent,
+                    text=f"Error renderizando pág. {page_num}",
+                    font=("Segoe UI", 8), fg="#7f1d1d", bg=C["surface_low"],
+                ).pack(pady=4)
+
+        doc.close()
+
+        # Guardar referencias para evitar garbage collection
+        parent._img_refs = img_refs
+
+    def _apply_jump(self, desde_var, hasta_var, motivo_var, modal):
+        """Aplica el salto: crea la exclusión, re-analiza y refresca."""
+        desde_str = desde_var.get().strip()
+        hasta_str = hasta_var.get().strip()
+        motivo = motivo_var.get().strip()
+
+        if not desde_str or not hasta_str:
+            messagebox.showerror("Error", "Debe indicar ambos folios (Desde y Hasta).")
+            return
+
+        try:
+            desde = int(desde_str)
+            hasta = int(hasta_str)
+        except ValueError:
+            messagebox.showerror("Error", "Los folios deben ser números enteros.")
+            return
+
+        if desde > hasta:
+            messagebox.showerror("Error", "El folio 'Desde' debe ser menor o igual al folio 'Hasta'.")
+            return
+
+        if not motivo:
+            motivo = f"Salto aprobado: folios {desde}–{hasta}"
+
+        from project_types import ExclusionRule
+
+        new_rule = ExclusionRule(
+            id=f"EX-{len(self.app_state.exclusions)+1:03d}",
+            tipo="SALTO",
+            desde=desde,
+            hasta=hasta,
+            motivo=motivo,
+        )
+        self.app_state.exclusions.append(new_rule)
+        self.on_add_log("INFO", f"Salto registrado desde Analizador: folios {desde}–{hasta}. {motivo}")
+
+        # Re-ejecutar análisis de folios
+        from utils.analyzers import analizar_folios
+        res = analizar_folios(self.app_state.records, self.app_state.exclusions)
+
+        # Limpiar sugerencias de tipo SALTO y re-resetar estados REVISAR
+        self.app_state.suggestions = [
+            s for s in self.app_state.suggestions if "SALTO" not in s.tipo_error.upper()
+        ]
+        for rec in self.app_state.records:
+            if rec.estado == "REVISAR":
+                rec.estado = ""
+
+        # Marcar registros con errores
+        self._error_record_ids = set()
+        for err in res.errores:
+            self._error_record_ids.add(err.record_id)
+            for rec in self.app_state.records:
+                if rec.id == err.record_id:
+                    rec.estado = "REVISAR"
+                    break
+
+        # Regenerar sugerencias de salto si aún hay errores
+        if not res.ok:
+            from utils.folio_parser import folio_to_int, int_to_folio
+            from project_types import SugerenciaCorreccion
+            expected = None
+            prev_hasta = None
+            for r in self.app_state.records:
+                parsed = parse_folios(r.folios)
+                if parsed is None:
+                    expected = None
+                    prev_hasta = None
+                    continue
+                d_num, d_cara, h_num, h_cara = parsed
+                d_int = folio_to_int(d_num, d_cara)
+                h_int = folio_to_int(h_num, h_cara)
+                if expected is not None and d_int != expected:
+                    num_e, cara_e = int_to_folio(expected)
+                    sug = SugerenciaCorreccion(
+                        id=f"SUG-{len(self.app_state.suggestions)+1:03d}",
+                        registro_id=r.id,
+                        tipo_error="SALTO DE FOLIO",
+                        descripcion=f"Salto detectado. Se esperaba '{num_e:03d}{cara_e}', se encontró '{r.folios[:6]}'.",
+                        valor_actual=r.folios,
+                        valor_sugerido=f"{num_e:03d}{cara_e}-{h_num:03d}{h_cara}",
+                        escribano=r.escribano,
+                        folios_original=r.folios,
+                        rango_sugerido=f"{num_e:03d}{cara_e}-{h_num:03d}{h_cara}",
+                        paginas_pdf=r.pg_pdf,
+                        paginas_sugeridas=r.pg_pdf,
+                        fecha_original=getattr(r, "fecha_inicio", ""),
+                        fecha_validada=getattr(r, "fecha_inicio", ""),
+                    )
+                    self.app_state.suggestions.append(sug)
+                expected = h_int + 1
+                prev_hasta = h_int
+
+        # Actualizar UI
+        self.on_add_log("SUCCESS", f"Salto {desde}–{hasta} registrado. Análisis re-ejecutado.")
+        self._update_stats_ui()
+        self._build_table()
+        modal.destroy()
+
+        # Desactivar botón de salto si ya no hay errores de tipo SALTO
+        has_salto_remaining = any(
+            "SALTO" in s.tipo_error.upper() for s in self.app_state.suggestions
+        )
+        if not has_salto_remaining:
+            self._jump_btn.configure(state="disabled", bg=C["secondary"])
+            self._showing_errors_only = False
+            self._toggle_errors_btn.configure(
+                state="disabled",
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+            )
+
+        self.on_add_log("SUCCESS", f"Análisis re-ejecutado tras registrar salto.")
 
 
     # ── Exportar ─────────────────────────────────────────────────────────────────
     def _export_report(self):
-        self.on_add_log("INFO", "Generando reporte de exportación (.xlsx)...")
-        self.after(1000, lambda: self.on_add_log(
-            "SUCCESS", "Reporte exportado: reporte_inventario_validado.xlsx"
-        ))
-        messagebox.showinfo(
-            "Exportar Reporte",
-            "En una implementación real, aquí se generaría el archivo .xlsx.\n"
-            "Función disponible al integrar la librería openpyxl."
+        from tkinter import filedialog
+        from utils.theme import C as _C
+        path = filedialog.asksaveasfilename(
+            title="Exportar Reporte",
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialfile="reporte_inventario_validado.xlsx",
         )
+        if not path:
+            return
+        self.on_add_log("INFO", "Generando reporte de exportación (.xlsx)...")
+        try:
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Inventario"
+            headers = ["ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título", "Estado"]
+            ws.append(headers)
+            for r in self.app_state.records:
+                ws.append([r.id, r.registro, r.escribano, r.protocolo, r.folios, r.pg_pdf, r.titulo, r.estado])
+            
+            if self.app_state.suggestions:
+                ws2 = wb.create_sheet("Sugerencias")
+                ws2.append(["ID", "Registro", "Tipo Error", "Valor Actual", "Valor Sugerido", "Descripción"])
+                for s in self.app_state.suggestions:
+                    ws2.append([s.id, s.registro_id, s.tipo_error, s.valor_actual, s.valor_sugerido, s.descripcion])
+            
+            wb.save(path)
+            self.on_add_log("SUCCESS", f"Reporte exportado: {os.path.basename(path)}")
+            from tkinter import messagebox
+            messagebox.showinfo("Exportar Reporte", f"Reporte generado exitosamente:\n{path}")
+        except ImportError:
+            self.on_add_log("WARN", "Librería openpyxl no instalada. Instale con: pip install openpyxl")
+            from tkinter import messagebox
+            messagebox.showerror("Error", "Se requiere openpyxl para exportar.\nInstale con: pip install openpyxl")
+        except Exception as e:
+            self.on_add_log("ERR", f"Error al exportar: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Error al generar reporte:\n{e}")

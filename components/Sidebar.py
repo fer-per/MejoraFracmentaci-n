@@ -4,24 +4,7 @@ Sidebar.py — Panel lateral colapsable del Escritorio del Archivista.
 """
 import tkinter as tk
 from tkinter import ttk
-
-
-C = {
-    "primary":           "#570013",
-    "primary_container": "#800020",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "surface_highest":   "#e5e2e1",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "secondary":         "#7c535d",
-    "secondary_container": "#ffc9d5",
-}
+from utils.theme import C, FONT
 
 # (label, ícono_emoji, view_key)
 NAV_ITEMS = [
@@ -97,6 +80,7 @@ class Sidebar(tk.Frame):
             relief="flat", bd=0,
             cursor="hand2",
             padx=10, pady=8,
+            command=self._new_fragmentation,
         )
         self._new_btn.pack(fill="x", padx=8, pady=(4, 12))
         self._add_hover(self._new_btn, C["primary_container"], C["primary"], "#ffffff", "#ffffff")
@@ -111,10 +95,14 @@ class Sidebar(tk.Frame):
             self._btn_refs[view_key + label] = widgets[0]
             self._nav_btns[view_key] = widgets
 
+        # Spacer que empuja los items inferiores al fondo
+        spacer = tk.Frame(self._inner, bg=C["surface_container"])
+        spacer.pack(fill="both", expand=True)
+
         # Separador
         tk.Frame(self._inner, bg=C["outline_variant"], height=1).pack(fill="x", padx=8, pady=8)
 
-        # Ítems inferiores
+        # Ítems inferiores (pegados al fondo)
         for label, icon, view_key in BOTTOM_ITEMS:
             self._make_nav_btn(label, icon, view_key)
 
@@ -212,6 +200,17 @@ class Sidebar(tk.Frame):
                 lbl.pack_forget()
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
+    def _new_fragmentation(self):
+        from tkinter import messagebox
+        if messagebox.askyesno("Nueva Fragmentación", "¿Desea iniciar una nueva sesión de fragmentación?\nSe perderán los datos no guardados."):
+            self.app_state.records = []
+            self.app_state.exclusions = []
+            self.app_state.suggestions = []
+            self.app_state.logs = []
+            self.app_state.excel_path = None
+            self.app_state.pdf_path = None
+            self.on_navigate("workspace")
+
     @staticmethod
     def _add_hover(widget, h_bg, n_bg, h_fg=None, n_fg=None):
         def on_enter(e):

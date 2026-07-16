@@ -4,13 +4,7 @@ como Soporte y Documentación.
 """
 import tkinter as tk
 
-C = {
-    "primary":           "#570013",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "outline_variant":   "#e0bfbf",
-    "secondary":         "#7c535d",
-}
+from utils.theme import C, FONT
 
 
 class PlaceholderView(tk.Frame):

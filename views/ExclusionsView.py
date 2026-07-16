@@ -7,21 +7,7 @@ from tkinter import ttk, messagebox
 import uuid
 
 
-C = {
-    "primary":           "#570013",
-    "primary_container": "#800020",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "secondary":         "#7c535d",
-    "secondary_container": "#ffc9d5",
-}
+from utils.theme import C, FONT
 
 CONTENIDO_OPTIONS = [
     "Hoja en Blanco",
@@ -40,6 +26,7 @@ class ExclusionsView(tk.Frame):
         super().__init__(parent, **kwargs)
         self.app_state = app_state
         self.on_add_log = on_add_log
+        self._showing_errors_only = False
         self.configure(bg=C["background"])
         self._build()
         self.bind("<Map>", lambda e: self.refresh())
@@ -83,11 +70,43 @@ class ExclusionsView(tk.Frame):
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        self._sf.bind("<MouseWheel>", _on_mousewheel)
+
         self._build_content()
 
     def _build_excel_table(self):
         container = tk.Frame(self._table_host, bg=C["background"])
         container.pack(fill="both", expand=True, padx=24, pady=(16, 4))
+
+        # Toolbar: título + botón toggle errores
+        toolbar = tk.Frame(container, bg=C["background"])
+        toolbar.pack(fill="x", pady=(0, 4))
+
+        tk.Label(
+            toolbar,
+            text="Inventario de Registros",
+            font=("Segoe UI", 10, "bold"),
+            fg=C["primary"], bg=C["background"],
+        ).pack(side="left")
+
+        self._toggle_errors_btn = tk.Button(
+            toolbar,
+            text="  ⚠ Mostrar solo errores  ",
+            font=("Segoe UI", 8, "bold"),
+            fg=C["primary"],
+            bg=C["surface_low"],
+            activebackground=C["secondary_container"],
+            activeforeground=C["primary"],
+            relief="flat", bd=0,
+            cursor="hand2",
+            padx=10, pady=4,
+            command=self._toggle_error_filter,
+            state="disabled",
+        )
+        self._toggle_errors_btn.pack(side="right", padx=4)
 
         vsb = tk.Scrollbar(container, orient="vertical")
         vsb.pack(side="right", fill="y")
@@ -138,6 +157,7 @@ class ExclusionsView(tk.Frame):
         self._tree.tag_configure("odd", background=C["surface"])
         self._tree.pack(fill="both", expand=True)
         self._tree.bind("<<TreeviewSelect>>", self._on_row_select)
+        self._tree.bind("<MouseWheel>", lambda e: self._tree.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def _populate_excel_table(self):
         if not hasattr(self, "_tree"):
@@ -145,7 +165,22 @@ class ExclusionsView(tk.Frame):
         for item in self._tree.get_children():
             self._tree.delete(item)
 
+        # Actualizar estado del botón toggle
+        has_errors = any(r.estado == "REVISAR" for r in self.app_state.records)
+        if has_errors:
+            self._toggle_errors_btn.configure(state="normal")
+        else:
+            self._toggle_errors_btn.configure(state="disabled")
+            self._showing_errors_only = False
+            self._toggle_errors_btn.configure(
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+            )
+
         for i, r in enumerate(self.app_state.records):
+            if self._showing_errors_only and r.estado != "REVISAR":
+                continue
+
             estado_icon = {
                 "": "",
                 "REVISAR": "⚠️",
@@ -172,6 +207,22 @@ class ExclusionsView(tk.Frame):
                     self.on_navigate_pdf(first_page)
             except Exception:
                 pass
+
+    def _toggle_error_filter(self):
+        self._showing_errors_only = not self._showing_errors_only
+        if self._showing_errors_only:
+            self._toggle_errors_btn.configure(
+                text="  ↩ Regresar a toda la lista  ",
+                bg="#d44040", fg="#ffffff",
+                activebackground="#b33030", activeforeground="#ffffff",
+            )
+        else:
+            self._toggle_errors_btn.configure(
+                text="  ⚠ Mostrar solo errores  ",
+                bg=C["surface_low"], fg=C["primary"],
+                activebackground=C["secondary_container"], activeforeground=C["primary"],
+            )
+        self._populate_excel_table()
 
     def _build_content(self):
         # Encabezado
@@ -482,19 +533,7 @@ class ExclusionsView(tk.Frame):
 
         motivo = self._jump_motivo.get().strip() or f"Salto aprobado: folios {desde}–{hasta}"
 
-        from types import SimpleNamespace
-        import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-        from types import SimpleNamespace as _SN
-        # Importar ExclusionRule
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "project_types",
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "project_types.py")
-        )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        ExclusionRule = mod.ExclusionRule
+        from project_types import ExclusionRule
 
         new_rule = ExclusionRule(
             id=f"EX-{len(self.app_state.exclusions)+1:03d}",
@@ -539,14 +578,7 @@ class ExclusionsView(tk.Frame):
             messagebox.showerror("Error", "Formato de rango inválido. Usa: '1-5' o '1, 3, 7'")
             return
 
-        import sys, os, importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "project_types",
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "project_types.py")
-        )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        ExclusionRule = mod.ExclusionRule
+        from project_types import ExclusionRule
 
         new_rule = ExclusionRule(
             id=f"EX-{len(self.app_state.exclusions)+1:03d}",

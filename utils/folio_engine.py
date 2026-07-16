@@ -10,12 +10,7 @@ Archivística:
 """
 from __future__ import annotations
 from typing import List, Optional, Tuple
-import sys
 import os
-
-# Import folio_parser del mismo paquete
-_dir = os.path.dirname(__file__)
-sys.path.insert(0, os.path.dirname(_dir))
 
 from utils.folio_parser import (
     parse_folios, folio_to_int, int_to_folio, format_folio
@@ -56,6 +51,7 @@ class FolioMapper:
         pag_pdf_inicio: int = 1,
         segmentos: Optional[List[Segmento]] = None,
         ignoradas: Optional[List[int]] = None,
+        page_map: Optional[dict] = None,
     ):
         self.folio_inicio_num = folio_inicio_num
         self.pag_pdf_inicio = pag_pdf_inicio
@@ -63,6 +59,7 @@ class FolioMapper:
             segmentos or [], key=lambda s: s.folio_int
         )
         self.ignoradas_set: set = set(ignoradas or [])
+        self.page_map: Optional[dict] = page_map  # {original_page: new_page} o None
 
     # ── API pública ──────────────────────────────────────────────────────────
 
@@ -85,6 +82,8 @@ class FolioMapper:
         for folio_int in range(desde_int, hasta_int + 1):
             raw = self._folio_int_to_raw_pdf(folio_int)
             adjusted = self._shift_by_ignored(raw)
+            if self.page_map is not None:
+                adjusted = self.page_map.get(adjusted, adjusted)
             pages.append(adjusted)
 
         return pages
@@ -185,6 +184,7 @@ def mapper_from_state(app_state) -> FolioMapper:
         pag_pdf_inicio=getattr(app_state, 'pag_pdf_inicio', 1),
         segmentos=segmentos,
         ignoradas=ignoradas,
+        page_map=getattr(app_state, 'page_map', None),
     )
 
 

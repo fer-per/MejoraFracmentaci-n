@@ -27,11 +27,13 @@ def main():
     # Color de fondo base
     root.configure(bg="#fcf9f8")
 
-    # Icono de la aplicación (si existe)
+    # Icono de la aplicación
     try:
-        icon_path = os.path.join(os.path.dirname(__file__), "icon.ico")
-        if os.path.exists(icon_path):
-            root.iconbitmap(icon_path)
+        logo_path = os.path.join(os.path.dirname(__file__), "LogoARA.png")
+        if os.path.exists(logo_path):
+            _icon_img = tk.PhotoImage(file=logo_path)
+            root.iconphoto(True, _icon_img)
+            root._icon_img = _icon_img
     except Exception:
         pass
 

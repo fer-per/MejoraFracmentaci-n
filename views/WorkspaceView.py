@@ -12,25 +12,11 @@ import pandas as pd
 
 from utils.folio_engine import mapper_from_state
 from project_types import InventoryRecord
-
-
-
-
-C = {
-    "primary":           "#570013",
-    "primary_container": "#800020",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "secondary":         "#7c535d",
-    "secondary_container": "#ffc9d5",
-}
+from project_types import SugerenciaCorreccion
+from utils.hierarchy_builder import RomanToSigloArabic
+from utils.analyzers import analizar_folios
+from utils.folio_parser import calculate_suggested_range
+from utils.theme import C, FONT
 
 
 class WorkspaceView(tk.Frame):
@@ -252,19 +238,36 @@ class WorkspaceView(tk.Frame):
 
     def _save_mapping_params(self):
         try:
-            self.app_state.fila_inicio = int(self._fila_inicio_var.get())
-            self.app_state.fila_fin = int(self._fila_fin_var.get())
-            self.app_state.folio_inicio = int(self._folio_inicio_var.get())
-            self.app_state.pag_pdf_inicio = int(self._pag_pdf_var.get())
+            fila_inicio = int(self._fila_inicio_var.get())
+            fila_fin = int(self._fila_fin_var.get())
+            folio_inicio = int(self._folio_inicio_var.get())
+            pag_pdf_inicio = int(self._pag_pdf_var.get())
             
-            # Si hay un archivo Excel ya cargado, reprocesarlo con los nuevos parámetros
+            if fila_inicio < 2:
+                messagebox.showerror("Error de Validación", "La fila de inicio debe ser >= 2 (filas 0-7 son cabecera).")
+                return
+            if fila_inicio >= fila_fin:
+                messagebox.showerror("Error de Validación", "La fila de inicio debe ser menor que la fila fin.")
+                return
+            if folio_inicio < 1:
+                messagebox.showerror("Error de Validación", "El folio inicio debe ser >= 1.")
+                return
+            if pag_pdf_inicio < 1:
+                messagebox.showerror("Error de Validación", "La página PDF inicio debe ser >= 1.")
+                return
+            
+            self.app_state.fila_inicio = fila_inicio
+            self.app_state.fila_fin = fila_fin
+            self.app_state.folio_inicio = folio_inicio
+            self.app_state.pag_pdf_inicio = pag_pdf_inicio
+            
             if self.app_state.excel_path:
                 self._process_excel_file(self.app_state.excel_path)
             
             self.on_add_log("SUCCESS", "Parámetros de mapeo guardados y aplicados correctamente.")
             messagebox.showinfo("Parámetros Guardados", "Los parámetros de mapeo se han guardado con éxito.")
         except ValueError:
-            messagebox.showerror("Error de Validación", "Todos los campos de parámetros de mapeo deben ser números enteros válidos.")
+            messagebox.showerror("Error de Validación", "Todos los campos deben ser números enteros válidos.")
 
     # ── Preview de inventario ────────────────────────────────────────────────────
     def _build_preview_card(self, parent, pad):
@@ -346,6 +349,7 @@ class WorkspaceView(tk.Frame):
         self._preview_tree.tag_configure("even", background=C["surface_low"])
         self._preview_tree.tag_configure("odd", background=C["surface"])
         self._preview_tree.bind("<<TreeviewSelect>>", self._on_row_select)
+        self._preview_tree.bind("<MouseWheel>", lambda e: self._preview_tree.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         self._refresh_preview_table()
 
@@ -425,7 +429,6 @@ class WorkspaceView(tk.Frame):
             self.on_add_log("WARN", f"No se pudieron extraer metadatos globales de las filas 4/7: {e}. Usando valores por defecto.")
 
         # Convertir Siglo Romano a Arábigo
-        from utils.hierarchy_builder import RomanToSigloArabic
         siglo_arabigo = RomanToSigloArabic(siglo_detectado)
         self.app_state.acervo_num = acervo_detectado
         self.on_add_log("SUCCESS", f"Metadatos extraídos: Acervo N° {acervo_detectado}, Siglo Romano '{siglo_detectado}' (Arábigo {siglo_arabigo}).")
@@ -578,7 +581,6 @@ class WorkspaceView(tk.Frame):
         self.app_state.records = records_temp
 
         # Ejecutar análisis de folios automático para clasificar alertas en background
-        from utils.analyzers import analizar_folios
         res_folios = analizar_folios(self.app_state.records, self.app_state.exclusions)
 
         # Poblar sugerencias y marcar como REVISAR los que tienen errores
@@ -590,9 +592,6 @@ class WorkspaceView(tk.Frame):
                     break
 
             # Generar sugerencia de corrección inteligente
-            from utils.folio_parser import calculate_suggested_range
-            from project_types import SugerenciaCorreccion
-
             curr_idx = next((idx for idx, r in enumerate(self.app_state.records) if r.id == err.record_id), None)
             prev_rec = self.app_state.records[curr_idx - 1] if curr_idx and curr_idx > 0 else None
             curr_rec = self.app_state.records[curr_idx] if curr_idx is not None else None
@@ -672,8 +671,19 @@ class WorkspaceView(tk.Frame):
             bg=C["secondary_container"],
             relief="flat", bd=0,
             cursor="hand2",
-            command=banner.destroy,
+            command=lambda t=tipo, b=banner: self._dismiss_banner(t, b),
         ).pack(side="right", padx=8)
+
+    def _dismiss_banner(self, tipo, banner):
+        banner.destroy()
+        if tipo == "excel":
+            self.app_state.excel_path = None
+            self.app_state.records = []
+            self._refresh_preview_table()
+            self.on_add_log("WARN", "Archivo Excel removido del estado.")
+        elif tipo == "pdf":
+            self.app_state.pdf_path = None
+            self.on_add_log("WARN", "Archivo PDF removido del estado.")
 
     # ── Helper tarjeta ───────────────────────────────────────────────────────────
     def _make_card(self, parent, title: str) -> tk.Frame:

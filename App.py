@@ -6,18 +6,12 @@ import tkinter as tk
 from tkinter import ttk
 import sys
 import os
-import importlib.util
 
-# Ajustar path para imports relativos
 _ROOT = os.path.dirname(__file__)
-sys.path.insert(0, _ROOT)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-# Cargar types.py del proyecto (evitar colisión con built-in 'types')
-_spec = importlib.util.spec_from_file_location("project_types", os.path.join(_ROOT, "project_types.py"))
-_types_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_types_mod)
-AppState = _types_mod.AppState
-SystemLog = _types_mod.SystemLog
+from project_types import AppState, SystemLog
 
 from components.Header import Header
 from components.Sidebar import Sidebar
@@ -25,6 +19,7 @@ from components.PDFPreview import PDFPreview
 from views.WorkspaceView import WorkspaceView
 from views.ExpandedAnalyzerView import ExpandedAnalyzerView
 from views.ExclusionsView import ExclusionsView
+from views.PDFEditorView import PDFEditorView
 from views.ProcessView import ProcessView
 from views.PlaceholderView import PlaceholderView
 from utils.mock_data import (
@@ -35,11 +30,8 @@ from utils.mock_data import (
 )
 
 
-C = {
-    "background":        "#fcf9f8",
-    "surface_container": "#f0edec",
-    "outline_variant":   "#e0bfbf",
-}
+from utils.theme import C
+from utils.session_manager import save_session, load_session
 
 
 class App(tk.Frame):
@@ -65,6 +57,22 @@ class App(tk.Frame):
         self._view_cache = {}
 
         self._build()
+
+        # Attempt to load previous session
+        try:
+            if load_session(self.state):
+                self._add_log("INFO", "Sesión anterior restaurada correctamente.")
+        except Exception:
+            pass
+
+        # Keyboard shortcuts
+        root = self.winfo_toplevel()
+        root.bind("<Control-s>", lambda e: self._save_session())
+        root.bind("<Control-n>", lambda e: self._navigate("workspace"))
+        root.bind("<Control-1>", lambda e: self._navigate("workspace"))
+        root.bind("<Control-2>", lambda e: self._navigate("analyzer"))
+        root.bind("<Control-3>", lambda e: self._navigate("exclusions"))
+        root.bind("<Control-4>", lambda e: self._navigate("process"))
 
     # ── Construcción ────────────────────────────────────────────────────────────
     def _build(self):
@@ -115,6 +123,7 @@ class App(tk.Frame):
         self._pdf_panel = PDFPreview(
             self._pdf_host,
             app_state=self.state,
+            on_edit_pdf=lambda: self._navigate("pdf_editor"),
         )
         self._pdf_panel.pack(fill="both", expand=True)
         self._pdf_panel.pack_propagate(False)
@@ -122,7 +131,7 @@ class App(tk.Frame):
             self._pdf_host,
             minsize=240,
             width=340,
-            stretch="never",
+            stretch="always",
         )
 
         # Cargar vista inicial
@@ -152,8 +161,8 @@ class App(tk.Frame):
             "analyzer":  "Tabla de Inventario",
             "exclusions": "Saltos y Exclusiones",
             "process": "Procesar y Fragmentar",
-            "documentation": "Documentación",
-            "support": "Soporte Técnico",
+            "documentation": "Documentacion",
+            "support": "Soporte Tecnico",
         }
         self._add_log("INFO", f"Navegando a: {names.get(view_key, view_key)}")
 
@@ -175,6 +184,8 @@ class App(tk.Frame):
             return ExpandedAnalyzerView(**kwargs)
         elif view_key == "exclusions":
             return ExclusionsView(**kwargs)
+        elif view_key == "pdf_editor":
+            return PDFEditorView(**kwargs, on_navigate=self._navigate)
         elif view_key == "process":
             return ProcessView(**kwargs)
         elif view_key in ("documentation", "support"):
@@ -212,7 +223,7 @@ class App(tk.Frame):
                 self._pdf_host,
                 minsize=240,
                 width=340,
-                stretch="never",
+                stretch="always",
             )
         else:
             self._center_paned.forget(self._pdf_host)
@@ -222,3 +233,17 @@ class App(tk.Frame):
         log = SystemLog.now(tipo, mensaje)
         self.state.logs.append(log)
         self._pdf_panel.append_log(log)
+        # Auto-save session periodically (on every 5th log)
+        if len(self.state.logs) % 5 == 0 and self.state.records:
+            try:
+                save_session(self.state)
+            except Exception:
+                pass
+
+    def _save_session(self):
+        try:
+            from utils.session_manager import save_session
+            path = save_session(self.state)
+            self._add_log("SUCCESS", f"Sesión guardada: {os.path.basename(path)}")
+        except Exception as e:
+            self._add_log("ERR", f"Error al guardar sesión: {e}")

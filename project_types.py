@@ -19,6 +19,10 @@ class InventoryRecord:
     pg_pdf: str                  # Páginas correspondientes en el PDF (ej: "1-2")
     titulo: str                  # Asunto o título del documento
     estado: str = ""  # '' | 'REVISAR' | 'FRAGMENTADO'
+    fecha_inicio: str = ""
+    fecha_fin: str = ""
+    interesado1: str = ""
+    interesado2: str = ""
 
 
 @dataclass
@@ -68,6 +72,7 @@ class AppState:
     """Estado global compartido de la aplicación."""
     excel_path: Optional[str] = None
     pdf_path: Optional[str] = None
+    pdf_original_path: Optional[str] = None
     records: list = field(default_factory=list)
     exclusions: list = field(default_factory=list)
     logs: list = field(default_factory=list)
@@ -85,6 +90,7 @@ class AppState:
     # Campos añadidos para motor de cálculo real
     segmentos: list = field(default_factory=list)      # Lista de dicts: {'folio_inicio': str, 'pag_pdf_inicio': int}
     overrides: dict = field(default_factory=dict)      # dict: {registro_id: paginas_pdf_overridden_str}
+    page_map: dict = field(default_factory=dict)       # dict: {original_page: new_page} para reordenamiento PDF
     output_dir: Optional[str] = None
     acervo_num: str = "7"
 

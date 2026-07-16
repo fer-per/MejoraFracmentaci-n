@@ -1,18 +1,15 @@
 """types_.py — Re-export alias para evitar colisión con el módulo built-in 'types'."""
-from types import SimpleNamespace
+import os
+import sys
 
-# Importar desde el archivo types.py del proyecto raíz
-import importlib.util, os, sys
+_ROOT = os.path.dirname(os.path.dirname(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-_spec = importlib.util.spec_from_file_location(
-    "project_types",
-    os.path.join(os.path.dirname(__file__), "..", "project_types.py")
+from project_types import (
+    InventoryRecord,
+    ExclusionRule,
+    SystemLog,
+    SugerenciaCorreccion,
+    AppState,
 )
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-
-InventoryRecord = _mod.InventoryRecord
-ExclusionRule = _mod.ExclusionRule
-SystemLog = _mod.SystemLog
-SugerenciaCorreccion = _mod.SugerenciaCorreccion
-AppState = _mod.AppState

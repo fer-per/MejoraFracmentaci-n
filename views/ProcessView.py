@@ -15,23 +15,7 @@ import pypdf
 from utils.folio_engine import mapper_from_state
 from utils.hierarchy_builder import build_11_level_path
 from utils.analyzers import analizar_folios
-
-
-C = {
-    "primary":           "#570013",
-    "primary_container": "#800020",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "on_tertiary":       "#e5e1df",
-    "secondary":         "#7c535d",
-}
+from utils.theme import C, FONT
 
 
 class ProcessView(tk.Frame):
@@ -229,6 +213,7 @@ class ProcessView(tk.Frame):
         scrollbar = tk.Scrollbar(log_container, command=self._console_text.yview)
         scrollbar.pack(side="right", fill="y")
         self._console_text.configure(yscrollcommand=scrollbar.set)
+        self._console_text.bind("<MouseWheel>", lambda e: self._console_text.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         self._console_text.tag_configure("INFO", foreground="#a8c4d4")
         self._console_text.tag_configure("WARN", foreground="#f5a742")
@@ -291,7 +276,11 @@ class ProcessView(tk.Frame):
         self._populate_details()
         self._tree.bind("<<TreeviewSelect>>", self._on_row_select)
 
+        for col in cols:
+            self._tree.heading(col, command=lambda c=col: self._sort_treeview(c))
+
         self._tree.pack(fill="both", expand=True)
+        self._tree.bind("<MouseWheel>", lambda e: self._tree.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def _populate_details(self):
         for item in self._tree.get_children():
@@ -312,6 +301,16 @@ class ProcessView(tk.Frame):
 
         self._tree.tag_configure("even", background=C["surface_low"])
         self._tree.tag_configure("odd", background=C["surface"])
+
+    def _sort_treeview(self, col):
+        data = [(self._tree.set(child, col), child) for child in self._tree.get_children("")]
+        try:
+            data.sort(key=lambda t: int(t[0].replace('#', '')), reverse=getattr(self, f'_sort_{col}', False))
+        except (ValueError, TypeError):
+            data.sort(key=lambda t: t[0], reverse=getattr(self, f'_sort_{col}', False))
+        for index, (val, child) in enumerate(data):
+            self._tree.move(child, "", index)
+        setattr(self, f'_sort_{col}', not getattr(self, f'_sort_{col}', False))
 
     def _on_row_select(self, event):
         selected = self._tree.selection()
@@ -359,7 +358,7 @@ class ProcessView(tk.Frame):
         else:
             self.after(0, lambda: self._log_local("WARN", "No se detectó PDF en Paso 1. Activando modo de simulación de rutas."))
 
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         mapper = mapper_from_state(self.app_state)
         records = self.app_state.records
@@ -389,7 +388,7 @@ class ProcessView(tk.Frame):
         for idx, r in enumerate(records):
             pct = int(((idx + 1) / total) * 100)
             self.after(0, lambda p=pct, msg=f"Procesando registro {idx+1}/{total} ({r.id})...": self._update_progress(p, msg))
-            time.sleep(0.4)
+            time.sleep(0.05)
 
             # Verificar si tiene errores en el analizador de sucesión
             if r.estado == "REVISAR" or r.folios == "140" or "140" in r.folios:
@@ -448,7 +447,7 @@ class ProcessView(tk.Frame):
                 self.after(0, lambda id_r=r.id, dest=dest_path: self._log_local("INFO", f"[SIMULACIÓN] Generando fragmento {id_r} en ruta:\n → {dest}"))
                 correctos += 1
 
-        time.sleep(0.6)
+        time.sleep(0.1)
         msg_final = f"Proceso finalizado. {correctos} fragmentos PDF creados satisfactoriamente. {len(omitidos)} omitidos."
         self.after(0, lambda: self._update_progress(100, msg_final))
         if len(omitidos) > 0:

@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 import math
 import os
+from utils.theme import C, FONT
 
 
 try:
@@ -19,28 +20,12 @@ except ImportError:
         pass
     PYMUPDF_OK = False
 
-C = {
-    "primary":           "#570013",
-    "on_primary":        "#ff828a",
-    "background":        "#fcf9f8",
-    "surface":           "#ffffff",
-    "surface_low":       "#f6f3f2",
-    "surface_container": "#f0edec",
-    "surface_high":      "#eae7e7",
-    "outline":           "#8c7071",
-    "outline_variant":   "#e0bfbf",
-    "tertiary":          "#32131c",
-    "on_tertiary":       "#e5e1df",
-    "secondary":         "#7c535d",
-    "secondary_container": "#ffc9d5",
-    "parchment":         "#f4ece1",
-}
-
 
 class PDFPreview(tk.Frame):
     BUF_PAGES = 4
 
     def __init__(self, parent, app_state, **kwargs):
+        self.on_edit_pdf = kwargs.pop("on_edit_pdf", None)
         super().__init__(parent, **kwargs)
         self.app_state = app_state
         self.configure(bg=C["surface_low"], bd=0)
@@ -67,6 +52,17 @@ class PDFPreview(tk.Frame):
 
         nav_frame = tk.Frame(toolbar, bg=C["surface_container"])
         nav_frame.pack(side="right", padx=8)
+
+        # Botón Editar PDF (izquierda del toolbar)
+        if self.on_edit_pdf:
+            tk.Button(
+                toolbar, text="✏ Editar", font=("Segoe UI", 8, "bold"),
+                fg="#ffffff", bg="#b45309",
+                activebackground="#92400e", activeforeground="#ffffff",
+                relief="flat", bd=0, cursor="hand2",
+                padx=8, pady=2,
+                command=self.on_edit_pdf,
+            ).pack(side="left", padx=(8, 4))
 
         tk.Button(
             nav_frame, text="\u25c0", font=("Segoe UI", 9),
@@ -159,8 +155,8 @@ class PDFPreview(tk.Frame):
         self._pages_frame.bind("<Configure>", self._on_frame_configure)
         self._canvas.bind("<Configure>", self._on_canvas_configure)
 
-        self._canvas.bind("<Enter>", lambda e: self._canvas.bind_all("<MouseWheel>", self._on_mouse_wheel))
-        self._canvas.bind("<Leave>", lambda e: self._canvas.unbind_all("<MouseWheel>"))
+        self._canvas.bind("<MouseWheel>", self._on_mouse_wheel)
+        self._pages_frame.bind("<MouseWheel>", self._on_mouse_wheel)
 
         self._render_current()
 
@@ -216,6 +212,8 @@ class PDFPreview(tk.Frame):
     def _on_page_entry(self, event=None):
         try:
             page = int(self._page_var.get())
+            page = max(1, min(page, max(1, self._total_pdf_pages)))
+            self._page_var.set(str(page))
             self.go_to_page(page)
         except ValueError:
             self._page_var.set(str(self.app_state.pdf_current_page))
@@ -334,6 +332,7 @@ class PDFPreview(tk.Frame):
                                   height=page_height, width=w - 30)
             slot_frame.pack(pady=8, anchor="center")
             slot_frame.pack_propagate(False)
+            slot_frame.bind("<MouseWheel>", self._on_mouse_wheel)
             self._page_widgets[i] = slot_frame
 
         bottom_spacer = tk.Frame(self._pages_frame, bg=C["surface_low"], height=0)
@@ -423,6 +422,7 @@ class PDFPreview(tk.Frame):
 
             lbl = tk.Label(slot_frame, image=photo, bg=C["surface_low"])
             lbl.pack(fill="both", expand=True)
+            lbl.bind("<MouseWheel>", self._on_mouse_wheel)
             slot_frame.configure(height=pix.height, width=pix.width)
 
             self._page_images[page_idx] = photo

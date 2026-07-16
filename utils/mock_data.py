@@ -2,24 +2,17 @@
 mock_data.py — Datos de pre-carga para la demostración del Archivista.
 Simula un protocolo notarial histórico con deliberadas inconsistencias de folios.
 """
-import sys
 import os
-import importlib.util
+import sys
 
-# Cargar types.py del proyecto (evitar colisión con built-in 'types')
 _ROOT = os.path.dirname(os.path.dirname(__file__))
-_spec = importlib.util.spec_from_file_location("project_types", os.path.join(_ROOT, "project_types.py"))
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-InventoryRecord = _mod.InventoryRecord
-ExclusionRule = _mod.ExclusionRule
-SystemLog = _mod.SystemLog
-SugerenciaCorreccion = _mod.SugerenciaCorreccion
-
+from project_types import InventoryRecord, ExclusionRule, SystemLog, SugerenciaCorreccion
 from utils.folio_engine import FolioMapper
-mapper_demo = FolioMapper(folio_inicio_num=1, pag_pdf_inicio=1)
 
+mapper_demo = FolioMapper(folio_inicio_num=1, pag_pdf_inicio=1)
 
 
 def get_mock_records() -> list:
@@ -53,7 +46,7 @@ def get_mock_records() -> list:
             id="#0004", fila=5, registro="1891-004",
             escribano="Morales, Petra Inés",
             protocolo="P-124",
-            folios="010r-011v", pg_pdf="",  # SALTO: debería ser 008r
+            folios="010r-011v", pg_pdf="",
             titulo="Arrendamiento de finca rústica",
             estado="REVISAR"
         ),
@@ -85,7 +78,7 @@ def get_mock_records() -> list:
             id="#0008", fila=9, registro="1891-008",
             escribano="Castillo, Fermín",
             protocolo="P-125",
-            folios="140",  # ERROR FORMATO: folio suelto sin cara
+            folios="140",
             titulo="Acta de defunción ante escribano",
             estado="REVISAR",
             pg_pdf="33-34"
@@ -123,7 +116,6 @@ def get_mock_records() -> list:
             estado="VALIDADO"
         ),
     ]
-    # Calcular pg_pdf usando el mapper_demo
     for r in records:
         if not r.pg_pdf:
             calculated = mapper_demo.folio_str_to_pdf_range(r.folios)
