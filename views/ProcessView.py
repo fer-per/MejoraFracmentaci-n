@@ -69,11 +69,10 @@ class ProcessView(tk.Frame):
         self._lower_paned = tk.PanedWindow(
             main_container,
             orient="vertical",
-            sashwidth=5,
+            sashwidth=6,
             sashrelief="flat",
             bg=C["outline_variant"],
             handlesize=0,
-            sashcursor="sb_v_double_arrow",
             opaqueresize=True,
         )
         self._lower_paned.pack(fill="both", expand=True)

@@ -21,6 +21,7 @@ class Header(tk.Frame):
     """
 
     def __init__(self, parent, app_state, on_toggle_dual_view, **kwargs):
+        self.on_edit_pdf = kwargs.pop("on_edit_pdf", None)
         super().__init__(parent, **kwargs)
         self.app_state = app_state
         self.on_toggle_dual_view = on_toggle_dual_view
@@ -105,8 +106,27 @@ class Header(tk.Frame):
             cursor="hand2",
             command=self._toggle_dual,
         )
-        self._dual_btn.pack(side="left", padx=(0, 8))
+        self._dual_btn.pack(side="left", padx=(0, 4))
         self._add_hover(self._dual_btn, C["secondary_container"], C["surface_low"])
+
+        # Botón Editar PDF
+        if self.on_edit_pdf:
+            self._edit_pdf_btn = tk.Button(
+                right,
+                text="✎  Editar PDF",
+                font=("Segoe UI", 9),
+                fg="#ffffff",
+                bg="#b45309",
+                activebackground="#92400e",
+                activeforeground="#ffffff",
+                relief="flat",
+                bd=0,
+                padx=10, pady=4,
+                cursor="hand2",
+                command=self.on_edit_pdf,
+            )
+            self._edit_pdf_btn.pack(side="left", padx=(0, 8))
+            self._add_hover(self._edit_pdf_btn, "#92400e", "#b45309")
 
         # Botón Configuración
         cfg_btn = tk.Button(

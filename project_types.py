@@ -91,6 +91,7 @@ class AppState:
     segmentos: list = field(default_factory=list)      # Lista de dicts: {'folio_inicio': str, 'pag_pdf_inicio': int}
     overrides: dict = field(default_factory=dict)      # dict: {registro_id: paginas_pdf_overridden_str}
     page_map: dict = field(default_factory=dict)       # dict: {original_page: new_page} para reordenamiento PDF
+    active_pages: list = field(default_factory=list)    # lista de índices originales (0-based) de páginas activas tras configuración
     output_dir: Optional[str] = None
     acervo_num: str = "7"
 

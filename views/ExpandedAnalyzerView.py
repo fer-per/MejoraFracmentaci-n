@@ -72,11 +72,10 @@ class ExpandedAnalyzerView(tk.Frame):
         self._main_paned = tk.PanedWindow(
             outer,
             orient="vertical",
-            sashwidth=5,
+            sashwidth=6,
             sashrelief="flat",
             bg=C["outline_variant"],
             handlesize=0,
-            sashcursor="sb_v_double_arrow",
             opaqueresize=True,
         )
         self._main_paned.pack(fill="both", expand=True)

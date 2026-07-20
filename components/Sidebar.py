@@ -150,7 +150,9 @@ class Sidebar(tk.Frame):
             w.bind("<Leave>", lambda e, fr=frame, il=icon_lbl, tl=text_lbl:
                    self._on_hover(fr, il, tl, False))
 
-        return (frame, indicator, icon_lbl, text_lbl)
+        widgets = (frame, indicator, icon_lbl, text_lbl)
+        self._nav_btns[view_key] = widgets
+        return widgets
 
     # ── Interacciones ────────────────────────────────────────────────────────────
     def _set_active(self, view_key, frame, indicator, icon_lbl, text_lbl, call_navigate=True):
@@ -198,6 +200,26 @@ class Sidebar(tk.Frame):
             self._toggle_btn.configure(text="▶")
             for lbl in getattr(self, '_text_labels_for_collapse', []):
                 lbl.pack_forget()
+
+    def clear_selection(self):
+        self._active_view.set("")
+        for child in self._inner.winfo_children():
+            if isinstance(child, tk.Frame):
+                child.configure(bg=C["surface_container"])
+                for w in child.winfo_children():
+                    try:
+                        w.configure(bg=C["surface_container"])
+                        if isinstance(w, tk.Label):
+                            w.configure(fg=C["secondary"])
+                    except Exception:
+                        pass
+
+    def set_active_view(self, view_key: str):
+        if view_key in self._nav_btns:
+            widgets = self._nav_btns[view_key]
+            self._set_active(view_key, *widgets, call_navigate=False)
+        else:
+            self.clear_selection()
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
     def _new_fragmentation(self):

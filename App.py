@@ -81,6 +81,7 @@ class App(tk.Frame):
             self,
             app_state=self.state,
             on_toggle_dual_view=self._toggle_pdf_panel,
+            on_edit_pdf=lambda: self._navigate("pdf_editor"),
         )
         self._header.pack(side="top", fill="x")
 
@@ -101,17 +102,16 @@ class App(tk.Frame):
         self._center_paned = tk.PanedWindow(
             self._body,
             orient="horizontal",
-            sashwidth=5,
+            sashwidth=6,
             sashrelief="flat",
             bg=C["outline_variant"],
             handlesize=0,
-            sashcursor="sb_h_double_arrow",
             opaqueresize=True,
         )
         self._center_paned.pack(side="left", fill="both", expand=True)
 
         # Área de contenido central (pane izquierdo, se expande)
-        self._content_area = tk.Frame(self._center_paned, bg=C["background"])
+        self._content_area = tk.Frame(self._center_paned, bg=C["background"], cursor="arrow")
         self._center_paned.add(
             self._content_area,
             minsize=400,
@@ -119,7 +119,7 @@ class App(tk.Frame):
         )
 
         # Host para el panel PDF Preview (pane derecho, ancho inicial 340)
-        self._pdf_host = tk.Frame(self._center_paned, bg=C["background"])
+        self._pdf_host = tk.Frame(self._center_paned, bg=C["background"], cursor="arrow")
         self._pdf_panel = PDFPreview(
             self._pdf_host,
             app_state=self.state,
@@ -139,6 +139,7 @@ class App(tk.Frame):
 
     # ── Navegación ───────────────────────────────────────────────────────────────
     def _navigate(self, view_key: str):
+        self._sidebar.set_active_view(view_key)
         self._show_view(view_key)
 
     def _show_view(self, view_key: str):
@@ -155,6 +156,13 @@ class App(tk.Frame):
         view.pack(fill="both", expand=True)
         self._current_view_key = view_key
 
+        # Invocar explícitamente refresh() si existe
+        if hasattr(view, "refresh"):
+            try:
+                view.refresh()
+            except Exception as e:
+                self._add_log("ERR", f"Error al refrescar vista {view_key}: {e}")
+
         # Log de navegación
         names = {
             "workspace": "Archivo",
@@ -163,6 +171,7 @@ class App(tk.Frame):
             "process": "Procesar y Fragmentar",
             "documentation": "Documentacion",
             "support": "Soporte Tecnico",
+            "pdf_editor": "Editor de PDF",
         }
         self._add_log("INFO", f"Navegando a: {names.get(view_key, view_key)}")
 
@@ -185,7 +194,11 @@ class App(tk.Frame):
         elif view_key == "exclusions":
             return ExclusionsView(**kwargs)
         elif view_key == "pdf_editor":
-            return PDFEditorView(**kwargs, on_navigate=self._navigate)
+            return PDFEditorView(
+                **kwargs,
+                on_navigate=self._navigate,
+                on_config_saved=self._on_config_saved,
+            )
         elif view_key == "process":
             return ProcessView(**kwargs)
         elif view_key in ("documentation", "support"):
@@ -227,6 +240,9 @@ class App(tk.Frame):
             )
         else:
             self._center_paned.forget(self._pdf_host)
+
+    def _on_config_saved(self):
+        self._pdf_panel.apply_active_pages()
 
     # ── Logs ─────────────────────────────────────────────────────────────────────
     def _add_log(self, tipo: str, mensaje: str):

@@ -54,12 +54,34 @@ class FolioMapper:
         page_map: Optional[dict] = None,
     ):
         self.folio_inicio_num = folio_inicio_num
+        self.page_map: Optional[dict] = page_map  # {original_page: new_page}
+        
+        # Traducir pag_pdf_inicio del espacio de trabajo al espacio original usando page_map
         self.pag_pdf_inicio = pag_pdf_inicio
+        if page_map:
+            orig_page = None
+            for op, np in page_map.items():
+                if np == pag_pdf_inicio:
+                    orig_page = op
+                    break
+            if orig_page is not None:
+                self.pag_pdf_inicio = orig_page
+
         self.segmentos: List[Segmento] = sorted(
             segmentos or [], key=lambda s: s.folio_int
         )
+        # Traducir los segmentos también si hay page_map
+        if page_map:
+            for seg in self.segmentos:
+                seg_orig = None
+                for op, np in page_map.items():
+                    if np == seg.pag_pdf_inicio:
+                        seg_orig = op
+                        break
+                if seg_orig is not None:
+                    seg.pag_pdf_inicio = seg_orig
+
         self.ignoradas_set: set = set(ignoradas or [])
-        self.page_map: Optional[dict] = page_map  # {original_page: new_page} o None
 
     # ── API pública ──────────────────────────────────────────────────────────
 
@@ -83,7 +105,12 @@ class FolioMapper:
             raw = self._folio_int_to_raw_pdf(folio_int)
             adjusted = self._shift_by_ignored(raw)
             if self.page_map is not None:
-                adjusted = self.page_map.get(adjusted, adjusted)
+                if adjusted in self.page_map:
+                    adjusted = self.page_map[adjusted]
+                    if adjusted is None:
+                        continue
+                else:
+                    continue
             pages.append(adjusted)
 
         return pages

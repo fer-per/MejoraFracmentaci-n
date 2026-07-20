@@ -262,7 +262,7 @@ class WorkspaceView(tk.Frame):
             self.app_state.pag_pdf_inicio = pag_pdf_inicio
             
             if self.app_state.excel_path:
-                self._process_excel_file(self.app_state.excel_path)
+                self._process_excel_file(self.app_state.excel_path, auto_detect=False)
             
             self.on_add_log("SUCCESS", "Parámetros de mapeo guardados y aplicados correctamente.")
             messagebox.showinfo("Parámetros Guardados", "Los parámetros de mapeo se han guardado con éxito.")
@@ -302,7 +302,7 @@ class WorkspaceView(tk.Frame):
 
 
         # Tabla de preview con scrollbar
-        cols = ("ID", "Registro", "Escribano", "Folios", "Pág. PDF", "Estado")
+        cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág. PDF")
         style = ttk.Style()
         style.configure(
             "Preview.Treeview",
@@ -340,7 +340,7 @@ class WorkspaceView(tk.Frame):
 
         col_widths = {
             "ID": 50, "Registro": 90, "Escribano": 150,
-            "Folios": 80, "Pág. PDF": 80, "Estado": 110,
+            "Protocolo": 80, "Folios": 80, "Pág. PDF": 80,
         }
         for col in cols:
             self._preview_tree.heading(col, text=col)
@@ -360,16 +360,10 @@ class WorkspaceView(tk.Frame):
 
         # Poblar todos los registros
         for i, r in enumerate(self.app_state.records):
-            estado_icon = {
-                "": "",
-                "REVISAR": "⚠️",
-                "FRAGMENTADO": "📎"
-            }.get(r.estado, "")
-            disp_estado = f"{estado_icon} {r.estado}".strip()
             tags = ("even",) if i % 2 == 0 else ("odd",)
             self._preview_tree.insert(
                 "", "end", iid=r.id,
-                values=(r.id, r.registro, r.escribano, r.folios, r.pg_pdf, disp_estado),
+                values=(r.fila, r.registro, r.escribano, r.protocolo, r.folios, r.pg_pdf),
                 tags=tags
             )
 
@@ -398,7 +392,7 @@ class WorkspaceView(tk.Frame):
         if path:
             self._process_excel_file(path)
 
-    def _process_excel_file(self, path):
+    def _process_excel_file(self, path, auto_detect=True):
         self.app_state.excel_path = path
         filename = os.path.basename(path)
         self._show_file_banner("excel", filename)
@@ -451,7 +445,7 @@ class WorkspaceView(tk.Frame):
         cols = [c for c in df.columns if not str(c).startswith("Unnamed:")]
 
         # Auto-detectar última fila con datos reales
-        if not df.empty:
+        if auto_detect and not df.empty:
             last_data_idx = df.last_valid_index()
             if last_data_idx is not None:
                 fila_fin_auto = last_data_idx + 9  # +7 skiprows +2 (header shift)
@@ -459,6 +453,20 @@ class WorkspaceView(tk.Frame):
                 if hasattr(self, "_fila_fin_var") and self._fila_fin_var:
                     self._fila_fin_var.set(str(fila_fin_auto))
                 self.on_add_log("INFO", f"Filas detectadas: {self.app_state.fila_inicio} a {fila_fin_auto}")
+
+        # Auto-detectar fila_inicio basándose en la primera fila con datos reales
+        if auto_detect and not df.empty:
+            for idx in range(len(df)):
+                row_data = df.iloc[idx]
+                first_cell = str(row_data.iloc[0]).strip()
+                if re.match(r'^\s*(protocolo|registro)\b', first_cell, re.IGNORECASE):
+                    continue
+                if any(str(row_data.iloc[c]).strip() for c in range(min(3, len(df.columns)))):
+                    fila_inicio_auto = idx + 9
+                    self.app_state.fila_inicio = fila_inicio_auto
+                    if hasattr(self, "_fila_inicio_var") and self._fila_inicio_var:
+                        self._fila_inicio_var.set(str(fila_inicio_auto))
+                    break
 
         # Mapeo de columnas según consideraciones_excel.md
         col_map = {
@@ -557,6 +565,15 @@ class WorkspaceView(tk.Frame):
             int1 = get_val("interesado1")
             int2 = get_val("interesado2")
 
+            # Convertir protocolo a entero si es numérico (quitar .0)
+            if prot:
+                try:
+                    prot_float = float(prot)
+                    if prot_float == int(prot_float):
+                        prot = str(int(prot_float))
+                except (ValueError, TypeError):
+                    pass
+
             # Evitar filas completamente vacías
             if not reg and not esc and not fols:
                 continue
@@ -644,6 +661,20 @@ class WorkspaceView(tk.Frame):
             filename = path.split("/")[-1].split("\\")[-1]
             self._show_file_banner("pdf", filename)
             self.on_add_log("SUCCESS", f"PDF maestro cargado: {filename}")
+
+            # Auto-detectar total de páginas del PDF y adaptar parámetros
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(path)
+                total_pages = len(reader.pages)
+                self.app_state.pdf_total_pages = total_pages
+                self.app_state.pag_pdf_inicio = 1
+                if hasattr(self, "_pag_pdf_var") and self._pag_pdf_var:
+                    self._pag_pdf_var.set("1")
+                self.on_add_log("INFO", f"PDF detectado: {total_pages} páginas. Pág. PDF inicio establecida a 1.")
+            except Exception:
+                pass
+
             if self.on_load_pdf:
                 self.on_load_pdf(path)
 

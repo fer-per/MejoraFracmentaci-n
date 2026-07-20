@@ -42,11 +42,10 @@ class ExclusionsView(tk.Frame):
         self._excl_paned = tk.PanedWindow(
             self,
             orient="vertical",
-            sashwidth=5,
+            sashwidth=6,
             sashrelief="flat",
             bg=C["outline_variant"],
             handlesize=0,
-            sashcursor="sb_v_double_arrow",
             opaqueresize=True,
         )
         self._excl_paned.pack(fill="both", expand=True)
@@ -245,11 +244,10 @@ class ExclusionsView(tk.Frame):
         forms_paned = tk.PanedWindow(
             self._sf,
             orient="horizontal",
-            sashwidth=5,
+            sashwidth=6,
             sashrelief="flat",
             bg=C["outline_variant"],
             handlesize=0,
-            sashcursor="sb_h_double_arrow",
             opaqueresize=True,
         )
         forms_paned.pack(fill="x", padx=24, pady=(0, 16))
