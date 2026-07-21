@@ -3,7 +3,7 @@ test_folio_parser.py — Tests unitarios para el parser de folios históricos.
 """
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from utils.folio_parser import (
     parse_folios, folio_to_int, int_to_folio, format_folio,

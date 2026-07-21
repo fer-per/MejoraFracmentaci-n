@@ -12,10 +12,12 @@ import csv
 import pypdf
 
 
+from domain.models import EstadoRecord
+from adapters.services import navigate_to_record_pdf, make_treeview_sortable, configure_treeview_style
+
 from utils.folio_engine import mapper_from_state
 from utils.hierarchy_builder import build_11_level_path
-from utils.analyzers import analizar_folios
-from utils.theme import C, FONT
+from utils.theme import C
 
 
 class ProcessView(tk.Frame):
@@ -121,10 +123,10 @@ class ProcessView(tk.Frame):
             row,
             text="✂   FRAGMENTAR PDF",
             font=("Segoe UI", 11, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=20, pady=10,
@@ -189,7 +191,7 @@ class ProcessView(tk.Frame):
             header,
             text="● EN ESPERA",
             font=("Courier New", 8, "bold"),
-            fg="#8c7071",
+            fg=C["outline"],
             bg=C["tertiary"],
         )
         self._active_dot.pack(side="right")
@@ -214,9 +216,9 @@ class ProcessView(tk.Frame):
         self._console_text.configure(yscrollcommand=scrollbar.set)
         self._console_text.bind("<MouseWheel>", lambda e: self._console_text.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
-        self._console_text.tag_configure("INFO", foreground="#a8c4d4")
-        self._console_text.tag_configure("WARN", foreground="#f5a742")
-        self._console_text.tag_configure("SUCCESS", foreground="#4cde7e")
+        self._console_text.tag_configure("INFO", foreground=C["log_info"])
+        self._console_text.tag_configure("WARN", foreground=C["log_warn"])
+        self._console_text.tag_configure("SUCCESS", foreground=C["log_success"])
 
         self._log_local("INFO", "Consola de fragmentación lista.")
 
@@ -239,21 +241,15 @@ class ProcessView(tk.Frame):
 
         # Tabla detalle
         cols = ("ID", "Registro", "Folios", "Rango Pág. PDF", "Hojas PDF", "Escribano")
-        style = ttk.Style()
-        style.configure(
+        configure_treeview_style(
             "Details.Treeview",
-            background=C["surface_low"],
-            foreground=C["secondary"],
-            fieldbackground=C["surface_low"],
-            rowheight=24,
-            font=("Segoe UI", 8),
-        )
-        style.configure(
-            "Details.Treeview.Heading",
-            background=C["surface_high"],
-            foreground=C["primary"],
-            font=("Segoe UI", 8, "bold"),
-            relief="flat",
+            bg_color=C["surface_low"],
+            fg_color=C["secondary"],
+            field_bg=C["surface_low"],
+            row_height=24,
+            font_size=8,
+            heading_bg=C["surface_high"],
+            heading_fg=C["primary"],
         )
 
         self._tree = ttk.Treeview(
@@ -276,7 +272,7 @@ class ProcessView(tk.Frame):
         self._tree.bind("<<TreeviewSelect>>", self._on_row_select)
 
         for col in cols:
-            self._tree.heading(col, command=lambda c=col: self._sort_treeview(c))
+            self._tree.heading(col, command=lambda c=col: make_treeview_sortable(self._tree, c, "_sort_reverse"))
 
         self._tree.pack(fill="both", expand=True)
         self._tree.bind("<MouseWheel>", lambda e: self._tree.yview_scroll(int(-1 * (e.delta / 120)), "units"))
@@ -301,32 +297,14 @@ class ProcessView(tk.Frame):
         self._tree.tag_configure("even", background=C["surface_low"])
         self._tree.tag_configure("odd", background=C["surface"])
 
-    def _sort_treeview(self, col):
-        data = [(self._tree.set(child, col), child) for child in self._tree.get_children("")]
-        try:
-            data.sort(key=lambda t: int(t[0].replace('#', '')), reverse=getattr(self, f'_sort_{col}', False))
-        except (ValueError, TypeError):
-            data.sort(key=lambda t: t[0], reverse=getattr(self, f'_sort_{col}', False))
-        for index, (val, child) in enumerate(data):
-            self._tree.move(child, "", index)
-        setattr(self, f'_sort_{col}', not getattr(self, f'_sort_{col}', False))
-
     def _on_row_select(self, event):
         selected = self._tree.selection()
         if not selected:
             return
-        item_id = selected[0]
-        vals = self._tree.item(item_id, "values")
-        if vals:
-            r_id = vals[0]
-            r = next((rec for rec in self.app_state.records if rec.id == r_id), None)
-            if r and r.pg_pdf:
-                try:
-                    first_page = int(str(r.pg_pdf).split('-')[0].strip())
-                    if self.on_navigate_pdf:
-                        self.on_navigate_pdf(first_page)
-                except Exception:
-                    pass
+        navigate_to_record_pdf(
+            self._tree, self.app_state.records,
+            selected[0], self.on_navigate_pdf
+        )
 
     # ── Lógica de fragmentación ──────────────────────────────────────────────────
     def _start_fragmentation(self):
@@ -334,7 +312,7 @@ class ProcessView(tk.Frame):
             return
         self._processing = True
         self._frag_btn.configure(text="⏳ Procesando...", state="disabled", bg=C["secondary"])
-        self._active_dot.configure(text="● PROCESANDO", fg="#f5a742")
+        self._active_dot.configure(text="● PROCESANDO", fg=C["log_warn"])
         self._progress_var.set(0)
         self._log_local("INFO", "Iniciando proceso de fragmentación física...")
         self.on_add_log("INFO", "Fragmentación iniciada en pestaña dedicada.")
@@ -390,7 +368,7 @@ class ProcessView(tk.Frame):
             time.sleep(0.05)
 
             # Verificar si tiene errores en el analizador de sucesión
-            if r.estado == "REVISAR" or r.folios == "140" or "140" in r.folios:
+            if r.estado == EstadoRecord.REVISAR or r.folios == "140" or "140" in r.folios:
                 motivo = "Inconsistencia de foliación declarada (requiere corrección en inventario)"
                 if r.folios == "140":
                     motivo = "Error de formato de folio (falta de cara r/v)"
@@ -462,21 +440,21 @@ class ProcessView(tk.Frame):
 
     def _finish_fragmentation(self):
         self._processing = False
-        self._active_dot.configure(text="● COMPLETADO", fg="#4cde7e")
+        self._active_dot.configure(text="● COMPLETADO", fg=C["log_success"])
         self._frag_btn.configure(
-            text="✅  Completado", state="normal", bg="#1a5c2e"
+            text="✅  Completado", state="normal", bg=C["success"]
         )
         # Marcar los registros de la app como FRAGMENTADO para demostrar dinamismo
         for r in self.app_state.records:
-            if r.estado != "REVISAR":
-                r.estado = "FRAGMENTADO"
+            if r.estado != EstadoRecord.REVISAR:
+                r.estado = EstadoRecord.FRAGMENTADO
         self._populate_details()
 
         self.after(3000, lambda: self._reset_btn())
 
     def _reset_btn(self):
         self._frag_btn.configure(text="✂   FRAGMENTAR PDF", bg=C["primary"])
-        self._active_dot.configure(text="● EN ESPERA", fg="#8c7071")
+        self._active_dot.configure(text="● EN ESPERA", fg=C["outline"])
 
     def _log_local(self, tipo, mensaje):
         ts = time.strftime("%H:%M:%S")

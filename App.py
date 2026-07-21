@@ -3,15 +3,9 @@ App.py — Contenedor de Estado Global e Hilos de Eventos.
 Ensambla Header, Sidebar, vistas y el panel PDFPreview.
 """
 import tkinter as tk
-from tkinter import ttk
-import sys
 import os
 
-_ROOT = os.path.dirname(__file__)
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
-from project_types import AppState, SystemLog
+from domain.models import AppState, SystemLog, PDF_PANEL_WIDTH
 
 from components.Header import Header
 from components.Sidebar import Sidebar
@@ -22,12 +16,6 @@ from views.ExclusionsView import ExclusionsView
 from views.PDFEditorView import PDFEditorView
 from views.ProcessView import ProcessView
 from views.PlaceholderView import PlaceholderView
-from utils.mock_data import (
-    get_mock_records,
-    get_mock_exclusions,
-    get_mock_logs,
-    get_mock_suggestions,
-)
 
 
 from utils.theme import C
@@ -35,6 +23,53 @@ from utils.session_manager import save_session, load_session
 
 
 class App(tk.Frame):
+
+    @staticmethod
+    def main():
+        from domain.registry import register_defaults
+        register_defaults()
+
+        root = tk.Tk()
+        root.title("Escritorio del Archivista — Fragmentador de PDFs Históricos")
+        root.geometry("1400x820")
+        root.minsize(1100, 650)
+
+        try:
+            root.state("zoomed")
+        except Exception:
+            pass
+
+        root.configure(bg=C["background"])
+
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "LogoARA.png")
+            if os.path.exists(logo_path):
+                _icon_img = tk.PhotoImage(file=logo_path)
+                root.iconphoto(True, _icon_img)
+                root._icon_img = _icon_img
+        except Exception:
+            pass
+
+        try:
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+
+        app = App(root)
+        app.pack(fill="both", expand=True)
+
+        def _on_close():
+            root.quit()
+            root.destroy()
+
+        root.protocol("WM_DELETE_WINDOW", _on_close)
+
+        try:
+            root.mainloop()
+        except KeyboardInterrupt:
+            _on_close()
+
     """
     Contenedor principal de la aplicación.
     Layout: Header (top) → [Sidebar | ContentArea | PDFPreview]
@@ -130,7 +165,7 @@ class App(tk.Frame):
         self._center_paned.add(
             self._pdf_host,
             minsize=240,
-            width=340,
+            width=PDF_PANEL_WIDTH,
             stretch="always",
         )
 
@@ -223,7 +258,7 @@ class App(tk.Frame):
                 frame,
                 text=f"Vista '{view_key}' en construcción",
                 font=("Segoe UI", 14),
-                fg="#8c7071",
+                fg=C["outline"],
                 bg=C["background"],
             ).place(relx=0.5, rely=0.5, anchor="center")
             return frame
@@ -235,7 +270,7 @@ class App(tk.Frame):
             self._center_paned.add(
                 self._pdf_host,
                 minsize=240,
-                width=340,
+                width=PDF_PANEL_WIDTH,
                 stretch="always",
             )
         else:
@@ -258,7 +293,6 @@ class App(tk.Frame):
 
     def _save_session(self):
         try:
-            from utils.session_manager import save_session
             path = save_session(self.state)
             self._add_log("SUCCESS", f"Sesión guardada: {os.path.basename(path)}")
         except Exception as e:

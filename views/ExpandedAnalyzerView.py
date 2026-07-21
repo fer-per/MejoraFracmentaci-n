@@ -12,13 +12,14 @@ from utils.analyzers import analizar_folios, analizar_topica, analizar_cronica, 
 from utils.folio_engine import mapper_from_state
 from utils.folio_parser import parse_folios
 from utils.theme import C, FONT
+from domain.models import EstadoRecord
 
 ESTADO_CONFIG = {
-    "VALIDADO":   {"bg": "#dbeafe", "fg": "#1e3a5f"},
-    "REVISAR":    {"bg": "#fee2e2", "fg": "#7f1d1d"},
-    "FRAGMENTADO":{"bg": "#d1fae5", "fg": "#064e3b"},
-    "SALTO":      {"bg": "#fee2e2", "fg": "#7f1d1d"},
-    "OCR PENDIENTE": {"bg": "#fef9c3", "fg": "#713f12"},
+    "VALIDADO":   {"bg": C["info_bg"], "fg": C["info"]},
+    "REVISAR":    {"bg": C["error_bg"], "fg": C["error_text"]},
+    "FRAGMENTADO":{"bg": C["success_bg"], "fg": C["success_text"]},
+    "SALTO":      {"bg": C["error_bg"], "fg": C["error_text"]},
+    "OCR PENDIENTE": {"bg": C["warning_bg_alt"], "fg": C["warning_text"]},
 }
 
 ANALYZER_TABS = [
@@ -151,9 +152,9 @@ class ExpandedAnalyzerView(tk.Frame):
             tabs_frame,
             text="▶ Iniciar Análisis",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
-            bg="#1e3a5f",
-            activebackground="#112233",
+            fg=C["white"],
+            bg=C["info"],
+            activebackground=C["info_dark"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=14, pady=5,
@@ -199,15 +200,15 @@ class ExpandedAnalyzerView(tk.Frame):
             self._toggle_errors_btn.configure(
                 state="disabled",
                 text="  ✅ Analizador correcto  ",
-                bg="#1a5c2e", fg="#ffffff",
-                activebackground="#14532d",
+                bg=C["success"], fg=C["white"],
+                activebackground=C["success_dark"],
             )
         elif showing_errors:
             self._toggle_errors_btn.configure(
                 state="normal",
                 text="  ↩ Regresar a toda la lista  ",
-                bg="#d44040", fg="#ffffff",
-                activebackground="#b33030",
+                bg=C["danger"], fg=C["white"],
+                activebackground=C["danger_dark"],
             )
         else:
             self._toggle_errors_btn.configure(
@@ -247,12 +248,12 @@ class ExpandedAnalyzerView(tk.Frame):
         def _get_leave_bg():
             txt = widget.cget("text")
             if "✅ Analizador correcto" in txt:
-                return "#1a5c2e"
+                return C["success"]
             if "Regresar" in txt:
-                return "#d44040"
+                return C["danger"]
             key = self._active_tab.get()
             if self._per_tab_showing_errors.get(key, False):
-                return "#d44040"
+                return C["danger"]
             return normal_color
         def on_enter(e):
             if str(widget["state"]) != "disabled":
@@ -292,7 +293,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
-                        rec.estado = "REVISAR"
+                        rec.estado = EstadoRecord.REVISAR
                         break
             self._update_stats_ui()
             self._build_table()
@@ -311,7 +312,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
-                        rec.estado = "REVISAR"
+                        rec.estado = EstadoRecord.REVISAR
                         break
             self._populate_other_suggestions(res.errores, "TÓPICA")
             self._update_stats_ui()
@@ -331,7 +332,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
-                        rec.estado = "REVISAR"
+                        rec.estado = EstadoRecord.REVISAR
                         break
             self._populate_other_suggestions(res.errores, "CRÓNICA")
             self._update_stats_ui()
@@ -351,7 +352,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 self._per_tab_error_ids[key].add(err.record_id)
                 for rec in self.app_state.records:
                     if rec.id == err.record_id:
-                        rec.estado = "REVISAR"
+                        rec.estado = EstadoRecord.REVISAR
                         break
             self._update_stats_ui()
             self._build_table()
@@ -366,8 +367,6 @@ class ExpandedAnalyzerView(tk.Frame):
         self._update_toggle_button_state(key)
 
     def _populate_other_suggestions(self, errores, tipo_analisis):
-        from project_types import SugerenciaCorreccion
-        # Limpiar sugerencias anteriores de este tipo
         self.app_state.suggestions = [s for s in self.app_state.suggestions if s.tipo_error != tipo_analisis]
         
         for err in errores:
@@ -445,7 +444,7 @@ class ExpandedAnalyzerView(tk.Frame):
             font=("Segoe UI", 8, "bold"),
             relief="flat",
         )
-        style.map("Archivista.Treeview", background=[("selected", "#f0e8ec")])
+        style.map("Archivista.Treeview", background=[("selected", C["selected_bg"])])
 
         # Columnas dinámicas según el tab activo
         base_cols = ("Fila", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título")
@@ -481,8 +480,8 @@ class ExpandedAnalyzerView(tk.Frame):
         # Tags de color
         self._tree.tag_configure("even", background=C["surface_low"])
         self._tree.tag_configure("odd", background=C["surface"])
-        self._tree.tag_configure("revisar", background="#fff0f0")
-        self._tree.tag_configure("fragmentado", background="#f0fff4")
+        self._tree.tag_configure("revisar", background=C["error_light"])
+        self._tree.tag_configure("fragmentado", background=C["fragmentado_bg"])
 
         self._populate_table()
         self._tree.pack(fill="both", expand=True)
@@ -568,12 +567,12 @@ class ExpandedAnalyzerView(tk.Frame):
 
         _metric_row(metrics, "Total páginas del PDF",     f"{pdf_total}",  C["tertiary"])
         _metric_row(metrics, "Máximo de páginas requerido", f"{max_req}",   C["tertiary"])
-        diff_fg = "#1a5c2e" if ok else "#b91c1c"
+        diff_fg = C["success"] if ok else C["error"]
         diff_sign = "+" if diff > 0 else ""
         _metric_row(metrics, "Diferencia", f"{diff_sign}{diff}", diff_fg)
 
         # Estado
-        estado_fg = "#1a5c2e" if ok else "#b91c1c"
+        estado_fg = C["success"] if ok else C["error"]
         estado_text = "✅  OK — El PDF cubre todas las páginas requeridas" if ok else "❌  INSUFICIENTE — Faltan páginas en el PDF"
         row = tk.Frame(metrics, bg=C["surface_low"], padx=14, pady=8)
         row.pack(fill="x", pady=3)
@@ -594,7 +593,7 @@ class ExpandedAnalyzerView(tk.Frame):
         bar_bg = tk.Frame(bar_frame, bg=C["surface_low"], height=12,
                           highlightbackground=C["outline_variant"], highlightthickness=1)
         bar_bg.pack(fill="x")
-        bar_color = "#1a5c2e" if ok else "#b91c1c"
+        bar_color = C["success"] if ok else C["error"]
         bar_fill = tk.Frame(bar_bg, bg=bar_color, height=12)
         bar_fill.place(relwidth=pct / 100.0, relheight=1)
 
@@ -603,19 +602,19 @@ class ExpandedAnalyzerView(tk.Frame):
             err = res.errores[0] if res.errores else None
             if err:
                 tk.Frame(card, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
-                msg_frame = tk.Frame(card, bg="#fef2f2", padx=14, pady=10,
-                                     highlightbackground="#fecaca", highlightthickness=1)
+                msg_frame = tk.Frame(card, bg=C["error_bg_alt"], padx=14, pady=10,
+                                     highlightbackground=C["error_border"], highlightthickness=1)
                 msg_frame.pack(fill="x", pady=8)
                 tk.Label(msg_frame, text="⚠️  " + err.descripcion,
-                         font=("Segoe UI", 9), fg="#b91c1c", bg="#fef2f2",
+                         font=("Segoe UI", 9), fg=C["error"], bg=C["error_bg_alt"],
                          wraplength=600, justify="left").pack(anchor="w")
         elif diff > 0:
             tk.Frame(card, bg=C["outline_variant"], height=1).pack(fill="x", pady=8)
-            msg_frame = tk.Frame(card, bg="#f0fdf4", padx=14, pady=10,
-                                 highlightbackground="#bbf7d0", highlightthickness=1)
+            msg_frame = tk.Frame(card, bg=C["success_msg_bg"], padx=14, pady=10,
+                                 highlightbackground=C["success_msg_border"], highlightthickness=1)
             msg_frame.pack(fill="x", pady=8)
             tk.Label(msg_frame, text=f"ℹ️  El PDF tiene {diff} página(s) extra después del último folio del inventario.",
-                     font=("Segoe UI", 9), fg="#166534", bg="#f0fdf4",
+                     font=("Segoe UI", 9), fg=C["success_msg_text"], bg=C["success_msg_bg"],
                      wraplength=600, justify="left").pack(anchor="w")
 
     def _populate_table(self):
@@ -734,7 +733,7 @@ class ExpandedAnalyzerView(tk.Frame):
                           highlightbackground=C["outline_variant"], highlightthickness=1)
         self._bar_bg.pack(fill="x", pady=6)
 
-        self._bar_fill = tk.Frame(self._bar_bg, bg="#1a5c2e", height=8)
+        self._bar_fill = tk.Frame(self._bar_bg, bg=C["success"], height=8)
         self._bar_fill.place(relwidth=0.0, relheight=1)
 
         # ── BLOQUE 3 (Derecha): Corrección y Acciones ──
@@ -756,10 +755,10 @@ class ExpandedAnalyzerView(tk.Frame):
             right_block,
             text="🔧 Corregir",
             font=("Segoe UI", 8, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["secondary"],
             activebackground=C["primary"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=10, pady=4,
@@ -772,10 +771,10 @@ class ExpandedAnalyzerView(tk.Frame):
             right_block,
             text="⬆ Registrar Salto",
             font=("Segoe UI", 8, "bold"),
-            fg="#ffffff",
-            bg="#b45309",
-            activebackground="#92400e",
-            activeforeground="#ffffff",
+            fg=C["white"],
+            bg=C["warning"],
+            activebackground=C["warning_dark"],
+            activeforeground=C["white"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=10, pady=4,
@@ -809,10 +808,10 @@ class ExpandedAnalyzerView(tk.Frame):
             w.destroy()
 
         stat_items = [
-            ("✅ Sin Alertas",  stats["validados"],   "#1a5c2e", "#d1fae5"),
-            ("⚠️ Alertas",     stats["revisar"],     "#92400e", "#fef3c7"),
-            ("❌ Errores",      stats["errores"],     "#7f1d1d", "#fee2e2"),
-            ("📎 Fragmentados", stats["fragmentados"], "#1e3a5f", "#dbeafe"),
+            ("✅ Sin Alertas",  stats["validados"],   C["success"], C["success_bg"]),
+            ("⚠️ Alertas",     stats["revisar"],     C["warning_dark"], C["warning_bg"]),
+            ("❌ Errores",      stats["errores"],     C["error_text"], C["error_bg"]),
+            ("📎 Fragmentados", stats["fragmentados"], C["info"], C["info_bg"]),
         ]
 
         for idx, (label, value, fg, bg) in enumerate(stat_items):
@@ -838,9 +837,9 @@ class ExpandedAnalyzerView(tk.Frame):
 
     def _calc_stats(self) -> dict:
         records = self.app_state.records
-        correctos = sum(1 for r in records if r.estado in ("", "FRAGMENTADO"))
-        revisar = sum(1 for r in records if r.estado == "REVISAR")
-        fragmentados = sum(1 for r in records if r.estado == "FRAGMENTADO")
+        correctos = sum(1 for r in records if r.estado in ("", EstadoRecord.FRAGMENTADO))
+        revisar = sum(1 for r in records if r.estado == EstadoRecord.REVISAR)
+        fragmentados = sum(1 for r in records if r.estado == EstadoRecord.FRAGMENTADO)
         return {
             "validados":    correctos,
             "revisar":      revisar,
@@ -881,7 +880,7 @@ class ExpandedAnalyzerView(tk.Frame):
             else:
                 self._correction_label.configure(
                     text=f"✅ Registro válido:\n{self._selected_record.estado}",
-                    fg="#1a5c2e",
+                    fg=C["success"],
                 )
                 self._correction_btn.configure(state="disabled", bg=C["secondary"])
 
@@ -892,7 +891,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 if "SALTO" in s.tipo_error.upper()
             )
             if has_salto:
-                self._jump_btn.configure(state="normal", bg="#b45309")
+                self._jump_btn.configure(state="normal", bg=C["warning"])
             else:
                 self._jump_btn.configure(state="disabled", bg=C["secondary"])
 
@@ -932,7 +931,7 @@ class ExpandedAnalyzerView(tk.Frame):
             header,
             text=f"⚠️  Corrección Inteligente  —  Registro {s.registro_id}",
             font=("Segoe UI", 11, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["primary"],
         ).pack(side="left")
 
@@ -1019,13 +1018,13 @@ class ExpandedAnalyzerView(tk.Frame):
         grid.pack(fill="x", pady=(0, 12))
 
         self._make_compare_box(grid, "Valor Actual (Error)",
-                               s.valor_actual, "#fee2e2", "#7f1d1d", row=0, col=0)
+                               s.valor_actual, C["error_bg"], C["error_text"], row=0, col=0)
         self._make_compare_box(grid, "Valor Sugerido ✎",
-                               s.valor_sugerido, "#d1fae5", "#064e3b", row=0, col=1, editable=True)
+                               s.valor_sugerido, C["success_bg"], C["success_text"], row=0, col=1, editable=True)
         self._make_compare_box(grid, "Rango Original",
-                               s.folios_original, "#fef3c7", "#713f12", row=1, col=0)
+                               s.folios_original, C["warning_bg"], C["warning_text"], row=1, col=0)
         self._make_compare_box(grid, "Rango Sugerido",
-                               s.rango_sugerido, "#dbeafe", "#1e3a5f", row=1, col=1)
+                               s.rango_sugerido, C["info_bg"], C["info"], row=1, col=1)
 
         # Botones de acción
         btn_frame = tk.Frame(right_col, bg=C["surface"])
@@ -1047,9 +1046,9 @@ class ExpandedAnalyzerView(tk.Frame):
             btn_frame,
             text="✅  Aplicar Correcciones",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
-            bg="#1a5c2e",
-            activebackground="#14532d",
+            fg=C["white"],
+            bg=C["success"],
+            activebackground=C["success_dark"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=16, pady=8,
@@ -1191,21 +1190,21 @@ class ExpandedAnalyzerView(tk.Frame):
         modal.geometry(f"+{max(0,x)}+{max(0,y)}")
 
         # ── Header ───────────────────────────────────────────────────────────────
-        header = tk.Frame(modal, bg="#92400e", pady=10, padx=16)
+        header = tk.Frame(modal, bg=C["warning_dark"], pady=10, padx=16)
         header.pack(fill="x")
 
         tk.Label(
             header,
             text=f"⬆  Registrar Salto  —  Registro {rec.id}",
             font=("Segoe UI", 11, "bold"),
-            fg="#ffffff", bg="#92400e",
+            fg=C["white"], bg=C["warning_dark"],
         ).pack(side="left")
 
         tk.Label(
             header,
             text=f"Folios: {rec.folios}  |  Pág PDF: {pdf_min_page}–{pdf_max_page}",
             font=("Courier New", 9),
-            fg="#fef3c7", bg="#92400e",
+            fg=C["warning_bg"], bg=C["warning_dark"],
         ).pack(side="right")
 
         # ── Cuerpo: PanedWindow horizontal (PDF preview | formulario) ────────────
@@ -1314,7 +1313,7 @@ class ExpandedAnalyzerView(tk.Frame):
         jump_desde_var = tk.StringVar(value=str(desde_folio))
         tk.Entry(desde_frame, textvariable=jump_desde_var,
                  font=("Courier New", 10, "bold"), width=12,
-                 fg=C["tertiary"], bg="#fef3c7",
+                 fg=C["tertiary"], bg=C["warning_bg"],
                  relief="solid", bd=1,
                  highlightbackground=C["outline_variant"], highlightthickness=1,
                  justify="center").pack(side="left", padx=4)
@@ -1326,7 +1325,7 @@ class ExpandedAnalyzerView(tk.Frame):
         jump_hasta_var = tk.StringVar(value=str(hasta_folio))
         tk.Entry(hasta_frame, textvariable=jump_hasta_var,
                  font=("Courier New", 10, "bold"), width=12,
-                 fg=C["tertiary"], bg="#fef3c7",
+                 fg=C["tertiary"], bg=C["warning_bg"],
                  relief="solid", bd=1,
                  highlightbackground=C["outline_variant"], highlightthickness=1,
                  justify="center").pack(side="left", padx=4)
@@ -1350,7 +1349,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 form_frame,
                 text="Error detectado:",
                 font=("Segoe UI", 8, "bold"),
-                fg="#92400e", bg=C["surface"],
+                fg=C["warning_dark"], bg=C["surface"],
             ).pack(anchor="w", pady=(0, 4))
             tk.Label(
                 form_frame,
@@ -1392,8 +1391,8 @@ class ExpandedAnalyzerView(tk.Frame):
             btn_frame,
             text="✅  Agregar Cambios",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff", bg="#1a5c2e",
-            activebackground="#14532d",
+            fg=C["white"], bg=C["success"],
+            activebackground=C["success_dark"],
             relief="flat", bd=0, cursor="hand2",
             padx=14, pady=8,
             command=_on_apply,
@@ -1427,7 +1426,7 @@ class ExpandedAnalyzerView(tk.Frame):
             tk.Label(
                 parent,
                 text=f"Error al abrir PDF:\n{e}",
-                font=("Segoe UI", 9), fg="#7f1d1d", bg=C["surface_low"],
+                font=("Segoe UI", 9), fg=C["error_text"], bg=C["surface_low"],
             ).pack(pady=40)
             return
 
@@ -1448,8 +1447,8 @@ class ExpandedAnalyzerView(tk.Frame):
             # Label de registro
             if i < len(context_records):
                 cr = context_records[i]
-                lbl_bg = "#fef3c7" if is_highlight else C["surface_container"]
-                lbl_fg = "#92400e" if is_highlight else C["secondary"]
+                lbl_bg = C["warning_bg"] if is_highlight else C["surface_container"]
+                lbl_fg = C["warning_dark"] if is_highlight else C["secondary"]
                 tag_text = " << SELECCIONADO >>" if is_highlight else ""
                 rec_label = tk.Label(
                     parent,
@@ -1471,7 +1470,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 photo = ImageTk.PhotoImage(img)
                 img_refs.append(photo)
 
-                border_color = "#b45309" if is_highlight else C["outline_variant"]
+                border_color = C["warning"] if is_highlight else C["outline_variant"]
                 border_width = 2 if is_highlight else 1
 
                 page_frame = tk.Frame(
@@ -1486,7 +1485,7 @@ class ExpandedAnalyzerView(tk.Frame):
                 tk.Label(
                     parent,
                     text=f"Error renderizando pág. {page_num}",
-                    font=("Segoe UI", 8), fg="#7f1d1d", bg=C["surface_low"],
+                    font=("Segoe UI", 8), fg=C["error_text"], bg=C["surface_low"],
                 ).pack(pady=4)
 
         doc.close()
@@ -1540,7 +1539,7 @@ class ExpandedAnalyzerView(tk.Frame):
             s for s in self.app_state.suggestions if "SALTO" not in s.tipo_error.upper()
         ]
         for rec in self.app_state.records:
-            if rec.estado == "REVISAR":
+            if rec.estado == EstadoRecord.REVISAR:
                 rec.estado = ""
 
         # Marcar registros con errores
@@ -1549,7 +1548,7 @@ class ExpandedAnalyzerView(tk.Frame):
             self._per_tab_error_ids["folios"].add(err.record_id)
             for rec in self.app_state.records:
                 if rec.id == err.record_id:
-                    rec.estado = "REVISAR"
+                    rec.estado = EstadoRecord.REVISAR
                     break
 
         # Regenerar sugerencias de salto si aún hay errores
@@ -1610,7 +1609,6 @@ class ExpandedAnalyzerView(tk.Frame):
     # ── Exportar ─────────────────────────────────────────────────────────────────
     def _export_report(self):
         from tkinter import filedialog
-        from utils.theme import C as _C
         path = filedialog.asksaveasfilename(
             title="Exportar Reporte",
             defaultextension=".xlsx",
@@ -1638,13 +1636,10 @@ class ExpandedAnalyzerView(tk.Frame):
             
             wb.save(path)
             self.on_add_log("SUCCESS", f"Reporte exportado: {os.path.basename(path)}")
-            from tkinter import messagebox
             messagebox.showinfo("Exportar Reporte", f"Reporte generado exitosamente:\n{path}")
         except ImportError:
             self.on_add_log("WARN", "Librería openpyxl no instalada. Instale con: pip install openpyxl")
-            from tkinter import messagebox
             messagebox.showerror("Error", "Se requiere openpyxl para exportar.\nInstale con: pip install openpyxl")
         except Exception as e:
             self.on_add_log("ERR", f"Error al exportar: {e}")
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Error al generar reporte:\n{e}")

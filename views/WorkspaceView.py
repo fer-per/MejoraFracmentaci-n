@@ -4,19 +4,12 @@ Carga de archivos (Excel/PDF), mapeo inicial, preview de inventario y fragmentac
 """
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import threading
-import time
 import os
-import re
-import pandas as pd
 
 from utils.folio_engine import mapper_from_state
-from project_types import InventoryRecord
-from project_types import SugerenciaCorreccion
-from utils.hierarchy_builder import RomanToSigloArabic
-from utils.analyzers import analizar_folios
-from utils.folio_parser import calculate_suggested_range
-from utils.theme import C, FONT
+from use_cases.excel_processing_use_case import process_excel
+from adapters.services import navigate_to_record_pdf, configure_treeview_style
+from utils.theme import C
 
 
 class WorkspaceView(tk.Frame):
@@ -225,10 +218,10 @@ class WorkspaceView(tk.Frame):
             btn_row,
             text="💾 Guardar Cambios",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=16, pady=6,
@@ -303,21 +296,12 @@ class WorkspaceView(tk.Frame):
 
         # Tabla de preview con scrollbar
         cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág. PDF")
-        style = ttk.Style()
-        style.configure(
+        configure_treeview_style(
             "Preview.Treeview",
-            background=C["surface_low"],
-            foreground=C["secondary"],
-            fieldbackground=C["surface_low"],
-            rowheight=28,
-            font=("Segoe UI", 8),
-        )
-        style.configure(
-            "Preview.Treeview.Heading",
-            background=C["surface_high"],
-            foreground=C["primary"],
-            font=("Segoe UI", 8, "bold"),
-            relief="flat",
+            bg_color=C["surface_low"],
+            fg_color=C["secondary"],
+            field_bg=C["surface_low"],
+            row_height=28,
         )
 
         tree_frame = tk.Frame(self._preview_card, bg=C["surface"])
@@ -371,15 +355,10 @@ class WorkspaceView(tk.Frame):
         selected = self._preview_tree.selection()
         if not selected:
             return
-        r_id = selected[0]
-        r = next((rec for rec in self.app_state.records if rec.id == r_id), None)
-        if r and r.pg_pdf:
-            try:
-                first_page = int(str(r.pg_pdf).split('-')[0].strip())
-                if self.on_navigate_pdf:
-                    self.on_navigate_pdf(first_page)
-            except Exception:
-                pass
+        navigate_to_record_pdf(
+            self._preview_tree, self.app_state.records,
+            selected[0], self.on_navigate_pdf
+        )
 
 
 
@@ -398,256 +377,20 @@ class WorkspaceView(tk.Frame):
         self._show_file_banner("excel", filename)
         self.on_add_log("INFO", f"Leyendo archivo de inventario: {filename}...")
 
-        # ── 1. Lectura de Metadatos Globales (Filas 4 y 7)
-        siglo_detectado = "XIX"
-        acervo_detectado = "7"
-        
-        try:
-            # Leer las primeras 7 filas para extraer metadatos sin saltar
-            if not path.lower().endswith('.csv'):
-                meta_df = pd.read_excel(path, nrows=7, header=None)
-                if len(meta_df) >= 4:
-                    celda_siglo = str(meta_df.iloc[3, 0])
-                    # Buscar patrón "Seccion: XVI" o similar
-                    match_s = re.search(r'secci[oó]n:\s*([A-Za-z0-9]+)', celda_siglo, re.IGNORECASE)
-                    if match_s:
-                        siglo_detectado = match_s.group(1).upper()
-                
-                if len(meta_df) >= 7:
-                    celda_acervo = str(meta_df.iloc[6, 0])
-                    # Buscar patrón "Código del fondo: N7" o "n07"
-                    match_a = re.search(r'c[oó]digo\s+del\s+fondo:\s*[Nn]0*(\d+)', celda_acervo, re.IGNORECASE)
-                    if match_a:
-                        acervo_detectado = match_a.group(1)
-        except Exception as e:
-            self.on_add_log("WARN", f"No se pudieron extraer metadatos globales de las filas 4/7: {e}. Usando valores por defecto.")
+        result = process_excel(path, self.app_state, auto_detect=auto_detect)
 
-        # Convertir Siglo Romano a Arábigo
-        siglo_arabigo = RomanToSigloArabic(siglo_detectado)
-        self.app_state.acervo_num = acervo_detectado
-        self.on_add_log("SUCCESS", f"Metadatos extraídos: Acervo N° {acervo_detectado}, Siglo Romano '{siglo_detectado}' (Arábigo {siglo_arabigo}).")
+        for tipo, mensaje in result["messages"]:
+            self.on_add_log(tipo, mensaje)
 
-        # ── 2. Cargar DataFrame de datos omitiendo las primeras 7 filas
-        try:
-            if path.lower().endswith('.csv'):
-                df = pd.read_csv(path)
-            else:
-                df = pd.read_excel(path, skiprows=7)
-        except Exception as e:
-            messagebox.showerror("Error", f"Fallo al abrir el archivo de datos:\n{e}")
-            self.on_add_log("ERR", f"Fallo al leer celdas: {e}")
-            return
-
-        # Limpiar espacios en nombres de columnas
-        df.columns = [str(c).strip() for c in df.columns]
-        
-        # Filtrar columnas Unnamed de pandas
-        cols = [c for c in df.columns if not str(c).startswith("Unnamed:")]
-
-        # Auto-detectar última fila con datos reales
-        if auto_detect and not df.empty:
-            last_data_idx = df.last_valid_index()
-            if last_data_idx is not None:
-                fila_fin_auto = last_data_idx + 9  # +7 skiprows +2 (header shift)
-                self.app_state.fila_fin = fila_fin_auto
-                if hasattr(self, "_fila_fin_var") and self._fila_fin_var:
-                    self._fila_fin_var.set(str(fila_fin_auto))
-                self.on_add_log("INFO", f"Filas detectadas: {self.app_state.fila_inicio} a {fila_fin_auto}")
-
-        # Auto-detectar fila_inicio basándose en la primera fila con datos reales
-        if auto_detect and not df.empty:
-            for idx in range(len(df)):
-                row_data = df.iloc[idx]
-                first_cell = str(row_data.iloc[0]).strip()
-                if re.match(r'^\s*(protocolo|registro)\b', first_cell, re.IGNORECASE):
-                    continue
-                if any(str(row_data.iloc[c]).strip() for c in range(min(3, len(df.columns)))):
-                    fila_inicio_auto = idx + 9
-                    self.app_state.fila_inicio = fila_inicio_auto
-                    if hasattr(self, "_fila_inicio_var") and self._fila_inicio_var:
-                        self._fila_inicio_var.set(str(fila_inicio_auto))
-                    break
-
-        # Mapeo de columnas según consideraciones_excel.md
-        col_map = {
-            "registro": None, "escribano": None, "protocolo": None,
-            "folios": None, "titulo": None, "fecha_inicio": None,
-            "fecha_fin": None, "interesado1": None, "interesado2": None
-        }
-
-        # Buscadores heurísticos estrictos
-        for c in cols:
-            c_clean = c.lower().replace("\n", " ").strip()
-            if "n° de registro" in c_clean or "numero de registro" in c_clean:
-                col_map["registro"] = c
-            elif "escribano" in c_clean or "notario" in c_clean:
-                col_map["escribano"] = c
-            elif "n° de prot" in c_clean or "protocolo" in c_clean:
-                col_map["protocolo"] = c
-            elif "n° de folios" in c_clean or "folios" in c_clean:
-                col_map["folios"] = c
-            elif "titulo estandar" in c_clean or "titulo" in c_clean:
-                col_map["titulo"] = c
-            elif "interesado 1" in c_clean or "interesado1" in c_clean:
-                col_map["interesado1"] = c
-            elif "interesado 2" in c_clean or "interesado2" in c_clean:
-                col_map["interesado2"] = c
-            elif "fecha inicial" in c_clean or "data cronica 1" in c_clean or ("data cr" in c_clean and "1" in c_clean):
-                col_map["fecha_inicio"] = c
-            elif "fecha final" in c_clean or "data cronica 2" in c_clean or ("data cr" in c_clean and "2" in c_clean):
-                col_map["fecha_fin"] = c
-
-        # Fallback heurístico simple si no se mapeó todo
-        for key, possible_names in [
-            ("registro", ["registro", "id", "expediente"]),
-            ("escribano", ["escribano", "notario"]),
-            ("protocolo", ["prot", "protocolo", "tomo"]),
-            ("folios", ["folios", "rango", "paginas"]),
-            ("titulo", ["titulo", "asunto", "desc"]),
-            ("fecha_inicio", ["inicial", "inicio", "fecha 1"]),
-            ("fecha_fin", ["final", "fin", "fecha 2"]),
-            ("interesado1", ["interesado 1", "interesado"]),
-            ("interesado2", ["interesado 2"])
-        ]:
-            if col_map[key] is None:
-                for c in cols:
-                    if any(pn in c.lower() for pn in possible_names):
-                        col_map[key] = c
-                        break
-
-        # Forzar mapeo específico de columnas por posición si existen suficientes columnas
-        if len(df.columns) >= 5:
-            col_map["titulo"] = df.columns[4]      # Columna 5 (E) es Data Tópica
-        if len(df.columns) >= 6:
-            col_map["fecha_inicio"] = df.columns[5] # Columna 6 (F) es Data Crónica
-
-        # Limpiar registros y sugerencias anteriores
-        self.app_state.records = []
-        self.app_state.suggestions = []
-
-        # Construir FolioMapper dinámico
-        mapper = mapper_from_state(self.app_state)
-
-        # Fila inicio y fin (1-indexed en la UI, index real en pandas)
-        # La UI configura la fila inicio/fin del Excel real. 
-        # Como saltamos las primeras 7 filas, la fila 8 es la cabecera (index 0).
-        # Fila de datos en Excel 9 -> índice pandas 0.
-        # Por tanto, index pandas = fila_excel - 9.
-        fila_inicio_idx = max(0, self.app_state.fila_inicio - 9)
-        fila_fin_idx = min(len(df), self.app_state.fila_fin - 8)
-
-        records_temp = []
-        for i in range(fila_inicio_idx, fila_fin_idx):
-            row_data = df.iloc[i]
-            
-            # Obtener primera celda para verificar si es fila decorativa
-            first_cell = str(row_data.iloc[0]).strip()
-            
-            # ── 3. Filtro de Marcadores de Sección (Filas Decorativas)
-            if re.match(r'^\s*(protocolo|registro)\b', first_cell, re.IGNORECASE):
-                # Omitir fila completa decorativa
-                continue
-
-            # Obtener datos sanitizados (NaN -> "") e ignorar espacios
-            def get_val(key):
-                val = row_data.get(col_map[key])
-                if pd.isna(val) or str(val).strip().lower() in ["nan", "nat"]:
-                    return ""
-                return str(val).strip()
-
-            reg = get_val("registro")
-            esc = get_val("escribano")
-            prot = get_val("protocolo")
-            fols = get_val("folios")
-            tit = get_val("titulo")
-            f_ini = get_val("fecha_inicio")
-            f_fin = get_val("fecha_fin")
-            int1 = get_val("interesado1")
-            int2 = get_val("interesado2")
-
-            # Convertir protocolo a entero si es numérico (quitar .0)
-            if prot:
-                try:
-                    prot_float = float(prot)
-                    if prot_float == int(prot_float):
-                        prot = str(int(prot_float))
-                except (ValueError, TypeError):
-                    pass
-
-            # Evitar filas completamente vacías
-            if not reg and not esc and not fols:
-                continue
-
-            # Calcular fila de Excel real: fila_excel = index_pandas + 7 + 2 = index_pandas + 9
-            fila_excel_real = i + 9
-            r_id = f"#{len(records_temp) + 1:04d}"
-            
-            # Calcular páginas PDF usando el motor
-            pg_range = mapper.folio_str_to_pdf_range(fols) or "1"
-
-            # Crear InventoryRecord con campos de apoyo para jerarquía
-            rec = InventoryRecord(
-                id=r_id,
-                fila=fila_excel_real,
-                registro=reg if reg else f"REG-{r_id}",
-                escribano=esc if esc else "Sin Escribano",
-                protocolo=prot if prot else "S/P",
-                folios=fols if fols else "001r",
-                pg_pdf=pg_range,
-                titulo=tit if tit else "Sin Título",
-                estado=""
-            )
-            # Guardamos los campos extendidos en el record de forma dinámica
-            rec.fecha_inicio = f_ini
-            rec.fecha_fin = f_fin
-            rec.interesado1 = int1
-            rec.interesado2 = int2
-            
-            records_temp.append(rec)
-
-        self.app_state.records = records_temp
-
-        # Ejecutar análisis de folios automático para clasificar alertas en background
-        res_folios = analizar_folios(self.app_state.records, self.app_state.exclusions)
-
-        # Poblar sugerencias y marcar como REVISAR los que tienen errores
-        for err in res_folios.errores:
-            # Marcar el registro
-            for rec in self.app_state.records:
-                if rec.id == err.record_id:
-                    rec.estado = "REVISAR"
-                    break
-
-            # Generar sugerencia de corrección inteligente
-            curr_idx = next((idx for idx, r in enumerate(self.app_state.records) if r.id == err.record_id), None)
-            prev_rec = self.app_state.records[curr_idx - 1] if curr_idx and curr_idx > 0 else None
-            curr_rec = self.app_state.records[curr_idx] if curr_idx is not None else None
-
-            sug_range = "001r-002v"
-            if prev_rec and curr_rec:
-                sug_range = calculate_suggested_range(prev_rec, curr_rec) or "001r-002v"
-
-            sug = SugerenciaCorreccion(
-                id=f"SUG-{len(self.app_state.suggestions)+1:03d}",
-                registro_id=err.record_id,
-                tipo_error=err.tipo,
-                descripcion=err.descripcion,
-                valor_actual=curr_rec.folios if curr_rec else "",
-                valor_sugerido=sug_range,
-                escribano=curr_rec.escribano if curr_rec else "",
-                folios_original=curr_rec.folios if curr_rec else "",
-                rango_sugerido=sug_range,
-                paginas_pdf=curr_rec.pg_pdf if curr_rec else "",
-                paginas_sugeridas=mapper.folio_str_to_pdf_range(sug_range) or "",
-                fecha_original="",
-                fecha_validada=""
-            )
-            self.app_state.suggestions.append(sug)
+        if hasattr(self, "_fila_inicio_var") and self._fila_inicio_var:
+            self._fila_inicio_var.set(str(self.app_state.fila_inicio))
+        if hasattr(self, "_fila_fin_var") and self._fila_fin_var:
+            self._fila_fin_var.set(str(self.app_state.fila_fin))
 
         self._refresh_preview_table()
-        self.on_add_log("SUCCESS", f"Inventario Excel cargado: {len(self.app_state.records)} registros importados de forma real.")
-        if len(res_folios.errores) > 0:
-            self.on_add_log("WARN", f"Se detectaron {len(res_folios.errores)} alertas en la foliación física.")
+        self.on_add_log("SUCCESS", f"Inventario Excel cargado: {result['total_records']} registros importados.")
+        if result["total_errors"] > 0:
+            self.on_add_log("WARN", f"Se detectaron {result['total_errors']} alertas en la foliacion.")
 
 
 

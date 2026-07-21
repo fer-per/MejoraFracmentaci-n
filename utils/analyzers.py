@@ -9,45 +9,10 @@ Implementa la lógica pura descrita en la sección 3.C del documento del proyect
 """
 from __future__ import annotations
 import re
-from dataclasses import dataclass, field
 from typing import List, Optional
 
+from domain.models import AnalysisError, AnalysisResult, EstadoRecord, YEAR_MIN, YEAR_MAX
 from utils.folio_parser import parse_folios, folio_to_int
-
-
-# ── Resultado de análisis ────────────────────────────────────────────────────
-
-@dataclass
-class AnalysisError:
-    """Un error individual detectado por un analizador."""
-    record_id: str
-    fila: int
-    tipo: str           # 'SALTO' | 'SOLAPAMIENTO' | 'REPETIDO' | 'FORMATO' | 'TOPICA' | 'CRONICA' | 'COVERAGE'
-    descripcion: str
-    valor_actual: str
-    valor_esperado: str = ""
-
-
-@dataclass
-class AnalysisResult:
-    """Resultado completo de un analizador."""
-    nombre: str
-    total_revisados: int
-    errores: List[AnalysisError] = field(default_factory=list)
-    advertencias: List[AnalysisError] = field(default_factory=list)
-    info_extra: dict = field(default_factory=dict)
-
-    @property
-    def ok(self) -> bool:
-        return len(self.errores) == 0
-
-    @property
-    def resumen(self) -> str:
-        if self.ok:
-            return f"✅ {self.nombre}: {self.total_revisados} registros validados sin incidencias."
-        return (
-            f"⚠️ {self.nombre}: {len(self.errores)} error(es) en {self.total_revisados} registros."
-        )
 
 
 # ── A. Sucesión de Folios ────────────────────────────────────────────────────
@@ -142,7 +107,7 @@ def analizar_folios(records: list, exclusions: list = None) -> AnalysisResult:
         errores=errores,
         advertencias=advertencias,
         info_extra={
-            "validados": sum(1 for r in records if r.estado == "VALIDADO"),
+            "validados": sum(1 for r in records if r.estado == EstadoRecord.VALIDADO),
             "revisar": len(errores),
         }
     )
@@ -227,7 +192,7 @@ def analizar_cronica(records: list) -> AnalysisResult:
             ))
             continue
 
-        if anio < 1500 or anio > 2100:
+        if anio < YEAR_MIN or anio > YEAR_MAX:
             errores.append(AnalysisError(
                 record_id=r.id, fila=r.fila,
                 tipo="CRONICA",

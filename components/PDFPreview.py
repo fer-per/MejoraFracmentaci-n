@@ -106,8 +106,8 @@ class PDFPreview(tk.Frame):
 
         tk.Button(
             zoom_frame, text="\u2212", font=("Segoe UI", 14, "bold"),
-            fg="#ffffff", bg="#b45309",
-            activebackground="#92400e", activeforeground="#ffffff",
+            fg=C["white"], bg=C["warning"],
+            activebackground=C["warning_dark"], activeforeground=C["white"],
             relief="flat", bd=0, cursor="hand2",
             padx=6, pady=1,
             command=self._zoom_out,
@@ -122,8 +122,8 @@ class PDFPreview(tk.Frame):
 
         tk.Button(
             zoom_frame, text="+", font=("Segoe UI", 14, "bold"),
-            fg="#ffffff", bg="#b45309",
-            activebackground="#92400e", activeforeground="#ffffff",
+            fg=C["white"], bg=C["warning"],
+            activebackground=C["warning_dark"], activeforeground=C["white"],
             relief="flat", bd=0, cursor="hand2",
             padx=6, pady=1,
             command=self._zoom_in,
@@ -275,7 +275,7 @@ class PDFPreview(tk.Frame):
 
             shadow_id = self._canvas.create_rectangle(
                 x_start + 4, y + 4, x_end + 4, y_end + 4,
-                fill="#000000", outline="", stipple="gray25",
+                fill=C["black"], outline="", stipple="gray25",
             )
 
             border_id = self._canvas.create_rectangle(

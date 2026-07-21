@@ -3,9 +3,9 @@ test_analyzers.py — Tests unitarios para los analizadores de calidad.
 """
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from project_types import InventoryRecord
+from domain.models import InventoryRecord
 from utils.analyzers import analizar_folios, analizar_topica, analizar_cronica
 
 

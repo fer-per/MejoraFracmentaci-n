@@ -4,7 +4,7 @@ como Soporte y Documentación.
 """
 import tkinter as tk
 
-from utils.theme import C, FONT
+from utils.theme import C
 
 
 class PlaceholderView(tk.Frame):

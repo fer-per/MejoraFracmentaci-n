@@ -107,7 +107,7 @@ class PDFEditorView(tk.Frame):
 
         self._modified_label = tk.Label(header, text="",
                                         font=("Segoe UI", 9, "bold"),
-                                        fg="#b45309", bg=C["background"])
+                                        fg=C["warning"], bg=C["background"])
         self._modified_label.pack(side="right")
 
         toolbar = tk.Frame(self, bg=C["surface_container"], pady=6)
@@ -123,26 +123,26 @@ class PDFEditorView(tk.Frame):
                   cursor="hand2", padx=10, pady=5)
 
         self._btn_move_up = tk.Button(
-            toolbar, text="\u2b06 Mover Arriba", fg="#fff", bg="#1e3a5f",
-            activebackground="#112233", state="disabled",
+            toolbar, text="\u2b06 Mover Arriba", fg=C["white"], bg=C["info"],
+            activebackground=C["info_dark"], state="disabled",
             command=lambda: self._move_page(-1), **bs)
         self._btn_move_up.pack(side="right", padx=4)
 
         self._btn_move_down = tk.Button(
-            toolbar, text="\u2b07 Mover Abajo", fg="#fff", bg="#1e3a5f",
-            activebackground="#112233", state="disabled",
+            toolbar, text="\u2b07 Mover Abajo", fg=C["white"], bg=C["info"],
+            activebackground=C["info_dark"], state="disabled",
             command=lambda: self._move_page(1), **bs)
         self._btn_move_down.pack(side="right", padx=4)
 
         self._btn_delete = tk.Button(
-            toolbar, text="\u2715 Eliminar", fg="#fff", bg="#b91c1c",
-            activebackground="#991b1b", state="disabled",
+            toolbar, text="\u2715 Eliminar", fg=C["white"], bg=C["error"],
+            activebackground=C["error_dark"], state="disabled",
             command=self._delete_pages, **bs)
         self._btn_delete.pack(side="right", padx=4)
 
         self._btn_save = tk.Button(
-            toolbar, text="\U0001f4be Guardar Configuración", fg="#fff", bg="#1a5c2e",
-            activebackground="#14532d", state="disabled",
+            toolbar, text="\U0001f4be Guardar Configuración", fg=C["white"], bg=C["success"],
+            activebackground=C["success_dark"], state="disabled",
             command=self._save_config, **bs)
         self._btn_save.pack(side="right", padx=4)
 

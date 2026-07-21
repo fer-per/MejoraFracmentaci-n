@@ -3,9 +3,9 @@ Header.py — Barra superior de navegación del Escritorio del Archivista.
 Contiene: logo, título, botón Vista Dual y avatar/configuración.
 """
 import tkinter as tk
-from tkinter import ttk
 import os
-from utils.theme import C, FONT
+from utils.theme import C
+from adapters.services import add_hover_effect
 
 try:
     from PIL import Image, ImageTk
@@ -36,7 +36,6 @@ class Header(tk.Frame):
 
     # ── Construcción ────────────────────────────────────────────────────────────
     def _build(self):
-        # Separador inferior sutil
         sep = tk.Frame(self, bg=C["outline_variant"], height=1)
         sep.pack(side="bottom", fill="x")
 
@@ -44,7 +43,6 @@ class Header(tk.Frame):
         left = tk.Frame(self, bg=C["surface_container"])
         left.pack(side="left", padx=(16, 0), pady=8)
 
-        # Logo desde LogoARA.png
         logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "LogoARA.png")
         self._logo_photo = None
         if PIL_OK and os.path.exists(logo_path):
@@ -63,11 +61,10 @@ class Header(tk.Frame):
             icon_box.pack(side="left", padx=(0, 10))
             icon_box.pack_propagate(False)
             tk.Label(
-                icon_box, text="✦", fg="#ff828a", bg=C["primary"],
+                icon_box, text="✦", fg=C["on_primary"], bg=C["primary"],
                 font=("Segoe UI", 14, "bold")
             ).place(relx=0.5, rely=0.5, anchor="center")
 
-        # Títulos
         title_frame = tk.Frame(left, bg=C["surface_container"])
         title_frame.pack(side="left")
 
@@ -91,7 +88,6 @@ class Header(tk.Frame):
         right = tk.Frame(self, bg=C["surface_container"])
         right.pack(side="right", padx=16, pady=8)
 
-        # Botón Vista Dual
         self._dual_btn = tk.Button(
             right,
             text="⊟  Vista Dual",
@@ -107,18 +103,17 @@ class Header(tk.Frame):
             command=self._toggle_dual,
         )
         self._dual_btn.pack(side="left", padx=(0, 4))
-        self._add_hover(self._dual_btn, C["secondary_container"], C["surface_low"])
+        add_hover_effect(self._dual_btn, C["secondary_container"], C["surface_low"])
 
-        # Botón Editar PDF
         if self.on_edit_pdf:
             self._edit_pdf_btn = tk.Button(
                 right,
                 text="✎  Editar PDF",
                 font=("Segoe UI", 9),
-                fg="#ffffff",
-                bg="#b45309",
-                activebackground="#92400e",
-                activeforeground="#ffffff",
+                fg=C["white"],
+                bg=C["warning"],
+                activebackground=C["warning_dark"],
+                activeforeground=C["white"],
                 relief="flat",
                 bd=0,
                 padx=10, pady=4,
@@ -126,9 +121,8 @@ class Header(tk.Frame):
                 command=self.on_edit_pdf,
             )
             self._edit_pdf_btn.pack(side="left", padx=(0, 8))
-            self._add_hover(self._edit_pdf_btn, "#92400e", "#b45309")
+            add_hover_effect(self._edit_pdf_btn, C["warning_dark"], C["warning"])
 
-        # Botón Configuración
         cfg_btn = tk.Button(
             right,
             text="⚙",
@@ -143,12 +137,11 @@ class Header(tk.Frame):
         )
         cfg_btn.pack(side="left", padx=(0, 8))
 
-        # Avatar
         avatar = tk.Label(
             right,
             text="AR",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["primary_container"],
             width=3, height=1,
             padx=4, pady=4,
@@ -169,8 +162,3 @@ class Header(tk.Frame):
     def _open_settings(self):
         from tkinter import messagebox
         messagebox.showinfo("Configuración", "Panel de configuración próximamente disponible.")
-
-    @staticmethod
-    def _add_hover(widget, hover_color, normal_color):
-        widget.bind("<Enter>", lambda e: widget.configure(bg=hover_color))
-        widget.bind("<Leave>", lambda e: widget.configure(bg=normal_color))

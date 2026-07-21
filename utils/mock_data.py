@@ -3,13 +3,8 @@ mock_data.py — Datos de pre-carga para la demostración del Archivista.
 Simula un protocolo notarial histórico con deliberadas inconsistencias de folios.
 """
 import os
-import sys
 
-_ROOT = os.path.dirname(os.path.dirname(__file__))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
-from project_types import InventoryRecord, ExclusionRule, SystemLog, SugerenciaCorreccion
+from domain.models import InventoryRecord, ExclusionRule, SystemLog, SugerenciaCorreccion
 from utils.folio_engine import FolioMapper
 
 mapper_demo = FolioMapper(folio_inicio_num=1, pag_pdf_inicio=1)

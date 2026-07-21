@@ -4,10 +4,11 @@ Formularios para saltos de folio y páginas a ignorar. Tabla de reglas activas.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-import uuid
-
-
-from utils.theme import C, FONT
+from utils.theme import C
+from domain.models import ExclusionRule, EstadoRecord
+from use_cases.analyzer_use_case import reanalyze_with_exclusions
+from adapters.services import navigate_to_record_pdf, configure_treeview_style
+from utils.folio_parser import parse_folios
 
 CONTENIDO_OPTIONS = [
     "Hoja en Blanco",
@@ -112,21 +113,12 @@ class ExclusionsView(tk.Frame):
         hsb = tk.Scrollbar(container, orient="horizontal")
         hsb.pack(side="bottom", fill="x")
 
-        style = ttk.Style()
-        style.configure(
+        configure_treeview_style(
             "ExclTable.Treeview",
-            background=C["surface"],
-            foreground=C["tertiary"],
-            fieldbackground=C["surface"],
-            rowheight=28,
-            font=("Segoe UI", 8),
-        )
-        style.configure(
-            "ExclTable.Treeview.Heading",
-            background=C["surface_high"],
-            foreground=C["primary"],
-            font=("Segoe UI", 8, "bold"),
-            relief="flat",
+            bg_color=C["surface"],
+            fg_color=C["tertiary"],
+            field_bg=C["surface"],
+            row_height=28,
         )
 
         cols = ("ID", "Registro", "Escribano", "Protocolo", "Folios", "Pág.PDF", "Título", "Estado")
@@ -165,7 +157,7 @@ class ExclusionsView(tk.Frame):
             self._tree.delete(item)
 
         # Actualizar estado del botón toggle
-        has_errors = any(r.estado == "REVISAR" for r in self.app_state.records)
+        has_errors = any(r.estado == EstadoRecord.REVISAR for r in self.app_state.records)
         if has_errors:
             self._toggle_errors_btn.configure(state="normal")
         else:
@@ -177,7 +169,7 @@ class ExclusionsView(tk.Frame):
             )
 
         for i, r in enumerate(self.app_state.records):
-            if self._showing_errors_only and r.estado != "REVISAR":
+            if self._showing_errors_only and r.estado != EstadoRecord.REVISAR:
                 continue
 
             estado_icon = {
@@ -197,23 +189,18 @@ class ExclusionsView(tk.Frame):
         selected = self._tree.selection()
         if not selected:
             return
-        r_id = selected[0]
-        r = next((rec for rec in self.app_state.records if rec.id == r_id), None)
-        if r and r.pg_pdf:
-            try:
-                first_page = int(str(r.pg_pdf).split('-')[0].strip())
-                if self.on_navigate_pdf:
-                    self.on_navigate_pdf(first_page)
-            except Exception:
-                pass
+        navigate_to_record_pdf(
+            self._tree, self.app_state.records,
+            selected[0], self.on_navigate_pdf
+        )
 
     def _toggle_error_filter(self):
         self._showing_errors_only = not self._showing_errors_only
         if self._showing_errors_only:
             self._toggle_errors_btn.configure(
                 text="  ↩ Regresar a toda la lista  ",
-                bg="#d44040", fg="#ffffff",
-                activebackground="#b33030", activeforeground="#ffffff",
+                bg=C["danger"], fg=C["white"],
+                activebackground=C["danger_dark"], activeforeground=C["white"],
             )
         else:
             self._toggle_errors_btn.configure(
@@ -332,9 +319,9 @@ class ExclusionsView(tk.Frame):
             card,
             text="＋  Registrar Salto",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff", bg=C["primary"],
+            fg=C["white"], bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0, cursor="hand2",
             padx=12, pady=7,
             command=self._add_jump,
@@ -402,9 +389,9 @@ class ExclusionsView(tk.Frame):
             card,
             text="＋  Agregar Exclusión",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff", bg=C["primary"],
+            fg=C["white"], bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0, cursor="hand2",
             padx=12, pady=7,
             command=self._add_ignore,
@@ -473,8 +460,8 @@ class ExclusionsView(tk.Frame):
 
         # Tipo pill
         tipo_cfg = {
-            "SALTO":  ("#fee2e2", "#7f1d1d"),
-            "IGNORAR":("#fef3c7", "#713f12"),
+            "SALTO":  (C["error_bg"], C["error_text"]),
+            "IGNORAR":(C["warning_bg"], C["warning_text"]),
         }.get(excl.tipo, (C["surface_low"], C["secondary"]))
 
         pill = tk.Label(
@@ -508,8 +495,8 @@ class ExclusionsView(tk.Frame):
             row,
             text="🗑",
             font=("Segoe UI", 10),
-            fg="#7f1d1d", bg=C["surface_low"],
-            activebackground="#fee2e2",
+            fg=C["error_text"], bg=C["surface_low"],
+            activebackground=C["error_bg"],
             relief="flat", bd=0,
             cursor="hand2",
             command=lambda e=excl: self._delete_exclusion(e.id),
@@ -530,8 +517,6 @@ class ExclusionsView(tk.Frame):
             return
 
         motivo = self._jump_motivo.get().strip() or f"Salto aprobado: folios {desde}–{hasta}"
-
-        from project_types import ExclusionRule
 
         new_rule = ExclusionRule(
             id=f"EX-{len(self.app_state.exclusions)+1:03d}",
@@ -576,8 +561,6 @@ class ExclusionsView(tk.Frame):
             messagebox.showerror("Error", "Formato de rango inválido. Usa: '1-5' o '1, 3, 7'")
             return
 
-        from project_types import ExclusionRule
-
         new_rule = ExclusionRule(
             id=f"EX-{len(self.app_state.exclusions)+1:03d}",
             tipo="IGNORAR",
@@ -603,57 +586,7 @@ class ExclusionsView(tk.Frame):
         self._run_analysis_and_refresh()
 
     def _run_analysis_and_refresh(self):
-        # 1. Ejecutar análisis de folios automático
-        from utils.analyzers import analizar_folios
-        res_folios = analizar_folios(self.app_state.records, self.app_state.exclusions)
-
-        # 2. Primero reiniciar todos los estados que estaban en REVISAR a vacío
-        for rec in self.app_state.records:
-            if rec.estado == "REVISAR":
-                rec.estado = ""
-
-        # 3. Marcar como REVISAR los que tienen errores según el nuevo análisis
-        for err in res_folios.errores:
-            for rec in self.app_state.records:
-                if rec.id == err.record_id:
-                    rec.estado = "REVISAR"
-                    break
-
-        # 4. Actualizar las sugerencias en AppState
-        from utils.folio_parser import calculate_suggested_range
-        from project_types import SugerenciaCorreccion
-        from utils.folio_engine import mapper_from_state
-        mapper = mapper_from_state(self.app_state)
-        
-        self.app_state.suggestions = [s for s in self.app_state.suggestions if s.tipo_error not in ("folios", "SALTO DE FOLIO", "SALTO", "FORMATO", "SOLAPAMIENTO")]
-        
-        for err in res_folios.errores:
-            curr_idx = next((idx for idx, r in enumerate(self.app_state.records) if r.id == err.record_id), None)
-            prev_rec = self.app_state.records[curr_idx - 1] if curr_idx and curr_idx > 0 else None
-            curr_rec = self.app_state.records[curr_idx] if curr_idx is not None else None
-
-            sug_range = "001r-002v"
-            if prev_rec and curr_rec:
-                sug_range = calculate_suggested_range(prev_rec, curr_rec) or "001r-002v"
-
-            sug = SugerenciaCorreccion(
-                id=f"SUG-{len(self.app_state.suggestions)+1:03d}",
-                registro_id=err.record_id,
-                tipo_error=err.tipo,
-                descripcion=err.descripcion,
-                valor_actual=curr_rec.folios if curr_rec else "",
-                valor_sugerido=sug_range,
-                escribano=curr_rec.escribano if curr_rec else "",
-                folios_original=curr_rec.folios if curr_rec else "",
-                rango_sugerido=sug_range,
-                paginas_pdf=curr_rec.pg_pdf if curr_rec else "",
-                paginas_sugeridas=mapper.folio_str_to_pdf_range(sug_range) or "",
-                fecha_original="",
-                fecha_validada=""
-            )
-            self.app_state.suggestions.append(sug)
-
-        # 5. Repoblar la tabla Excel en esta pantalla
+        reanalyze_with_exclusions(self.app_state)
         self._populate_excel_table()
 
     # ── Tarjeta: Segmentación de PDF ──────────────────────────────────────────────
@@ -714,9 +647,9 @@ class ExclusionsView(tk.Frame):
             row,
             text="＋ Agregar Segmento",
             font=("Segoe UI", 8, "bold"),
-            fg="#ffffff", bg=C["primary"],
+            fg=C["white"], bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0, cursor="hand2",
             padx=12, pady=6,
             command=self._add_segment,
@@ -743,7 +676,6 @@ class ExclusionsView(tk.Frame):
             return
 
         # Validar formato de folio
-        from utils.folio_parser import parse_folios
         if parse_folios(fol) is None:
             messagebox.showerror("Error", "Folio Inicio inválido (ej: '002r', '401v').")
             return
@@ -794,8 +726,8 @@ class ExclusionsView(tk.Frame):
                 row,
                 text="Eliminar",
                 font=("Segoe UI", 7, "bold"),
-                fg="#a03030", bg=C["surface_low"],
-                activebackground="#fee2e2",
+                fg=C["danger_text"], bg=C["surface_low"],
+                activebackground=C["error_bg"],
                 relief="flat", bd=0, cursor="hand2",
                 command=lambda i=idx: self._delete_segment(i),
             ).pack(side="right")

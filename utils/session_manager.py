@@ -72,7 +72,7 @@ def load_session(app_state, path: str = None) -> bool:
     app_state.overrides = data.get("overrides", {})
 
     # Reconstruir records
-    from project_types import InventoryRecord
+    from domain.models import InventoryRecord
     app_state.records = []
     for rd in data.get("records", []):
         r = InventoryRecord(
@@ -88,7 +88,7 @@ def load_session(app_state, path: str = None) -> bool:
         app_state.records.append(r)
 
     # Reconstruir exclusions
-    from project_types import ExclusionRule
+    from domain.models import ExclusionRule
     app_state.exclusions = []
     for ed in data.get("exclusions", []):
         e = ExclusionRule(
@@ -100,7 +100,7 @@ def load_session(app_state, path: str = None) -> bool:
         app_state.exclusions.append(e)
 
     # Reconstruir suggestions
-    from project_types import SugerenciaCorreccion
+    from domain.models import SugerenciaCorreccion
     app_state.suggestions = []
     for sd in data.get("suggestions", []):
         s = SugerenciaCorreccion(

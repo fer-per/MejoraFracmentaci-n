@@ -4,7 +4,8 @@ Sidebar.py — Panel lateral colapsable del Escritorio del Archivista.
 """
 import tkinter as tk
 from tkinter import ttk
-from utils.theme import C, FONT
+from utils.theme import C
+from adapters.services import add_hover_effect
 
 # (label, ícono_emoji, view_key)
 NAV_ITEMS = [
@@ -42,7 +43,6 @@ class Sidebar(tk.Frame):
         )
         self.pack_propagate(False)
 
-        # Separador derecho
         sep = tk.Frame(self, bg=C["outline_variant"], width=1)
         sep.pack(side="right", fill="y")
 
@@ -53,7 +53,6 @@ class Sidebar(tk.Frame):
         self._inner = tk.Frame(self, bg=C["surface_container"])
         self._inner.pack(fill="both", expand=True)
 
-        # Botón colapsar / expandir
         self._toggle_btn = tk.Button(
             self._inner,
             text="◀",
@@ -68,45 +67,38 @@ class Sidebar(tk.Frame):
         )
         self._toggle_btn.pack(fill="x", padx=8, pady=(10, 4))
 
-        # Botón "Nueva Fragmentación"
         self._new_btn = tk.Button(
             self._inner,
             text="  ＋  Nueva Fragmentación",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
+            fg=C["white"],
             bg=C["primary"],
             activebackground=C["primary_container"],
-            activeforeground="#ffffff",
+            activeforeground=C["white"],
             relief="flat", bd=0,
             cursor="hand2",
             padx=10, pady=8,
             command=self._new_fragmentation,
         )
         self._new_btn.pack(fill="x", padx=8, pady=(4, 12))
-        self._add_hover(self._new_btn, C["primary_container"], C["primary"], "#ffffff", "#ffffff")
+        add_hover_effect(self._new_btn, C["primary_container"], C["primary"], C["white"], C["white"])
 
-        # Separador
         tk.Frame(self._inner, bg=C["outline_variant"], height=1).pack(fill="x", padx=8, pady=(0, 8))
 
-        # Ítems de navegación principales
         self._nav_btns = {}
         for label, icon, view_key in NAV_ITEMS:
             widgets = self._make_nav_btn(label, icon, view_key)
             self._btn_refs[view_key + label] = widgets[0]
             self._nav_btns[view_key] = widgets
 
-        # Spacer que empuja los items inferiores al fondo
         spacer = tk.Frame(self._inner, bg=C["surface_container"])
         spacer.pack(fill="both", expand=True)
 
-        # Separador
         tk.Frame(self._inner, bg=C["outline_variant"], height=1).pack(fill="x", padx=8, pady=8)
 
-        # Ítems inferiores (pegados al fondo)
         for label, icon, view_key in BOTTOM_ITEMS:
             self._make_nav_btn(label, icon, view_key)
 
-        # Activar "Archivo" visualmente por defecto (sin navegar, App aún construyendo)
         if "workspace" in self._nav_btns:
             ws = self._nav_btns["workspace"]
             self._set_active("workspace", *ws, call_navigate=False)
@@ -115,7 +107,6 @@ class Sidebar(tk.Frame):
         frame = tk.Frame(self._inner, bg=C["surface_container"], cursor="hand2")
         frame.pack(fill="x", padx=6, pady=1)
 
-        # Indicador activo izquierdo
         indicator = tk.Frame(frame, bg=C["surface_container"], width=4)
         indicator.pack(side="left", fill="y")
 
@@ -156,7 +147,6 @@ class Sidebar(tk.Frame):
 
     # ── Interacciones ────────────────────────────────────────────────────────────
     def _set_active(self, view_key, frame, indicator, icon_lbl, text_lbl, call_navigate=True):
-        # Resetear todos los ítems
         for child in self._inner.winfo_children():
             if isinstance(child, tk.Frame) and child != frame:
                 child.configure(bg=C["surface_container"])
@@ -168,7 +158,6 @@ class Sidebar(tk.Frame):
                     except Exception:
                         pass
 
-        # Activar el ítem seleccionado
         frame.configure(bg=C["secondary_container"])
         icon_lbl.configure(bg=C["secondary_container"], fg=C["primary"])
         text_lbl.configure(bg=C["secondary_container"], fg=C["primary"])
@@ -179,14 +168,10 @@ class Sidebar(tk.Frame):
             self.on_navigate(view_key)
 
     def _on_hover(self, frame, icon_lbl, text_lbl, entering: bool):
-        if entering:
-            frame.configure(bg=C["surface_highest"])
-            icon_lbl.configure(bg=C["surface_highest"])
-            text_lbl.configure(bg=C["surface_highest"])
-        else:
-            frame.configure(bg=C["surface_container"])
-            icon_lbl.configure(bg=C["surface_container"])
-            text_lbl.configure(bg=C["surface_container"])
+        color = C["surface_highest"] if entering else C["surface_container"]
+        frame.configure(bg=color)
+        icon_lbl.configure(bg=color)
+        text_lbl.configure(bg=color)
 
     def _toggle_collapse(self):
         self._expanded = not self._expanded
@@ -232,16 +217,3 @@ class Sidebar(tk.Frame):
             self.app_state.excel_path = None
             self.app_state.pdf_path = None
             self.on_navigate("workspace")
-
-    @staticmethod
-    def _add_hover(widget, h_bg, n_bg, h_fg=None, n_fg=None):
-        def on_enter(e):
-            widget.configure(bg=h_bg)
-            if h_fg:
-                widget.configure(fg=h_fg)
-        def on_leave(e):
-            widget.configure(bg=n_bg)
-            if n_fg:
-                widget.configure(fg=n_fg)
-        widget.bind("<Enter>", on_enter)
-        widget.bind("<Leave>", on_leave)

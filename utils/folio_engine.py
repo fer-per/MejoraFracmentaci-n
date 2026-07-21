@@ -15,6 +15,7 @@ import os
 from utils.folio_parser import (
     parse_folios, folio_to_int, int_to_folio, format_folio
 )
+from domain.models import MAX_IGNORED_ITERATIONS
 
 
 # ── Tipos internos ───────────────────────────────────────────────────────────
@@ -170,7 +171,7 @@ class FolioMapper:
         """
         page = raw_page
         visited = 0
-        while page in self.ignoradas_set and visited < 2000:
+        while page in self.ignoradas_set and visited < MAX_IGNORED_ITERATIONS:
             page += 1
             visited += 1
         return page
